@@ -200,21 +200,35 @@ function GameDetail({game,onBack}){
 }
 
 // ─── Game History ───
-function HistoryPage({games,onBack,onView}){
+function HistoryPage({games,onBack,onView,onDelete}){
+  const [delConf,setDelConf]=useState(null);
   return(<div style={{maxWidth:480,margin:"0 auto",padding:20}}>
     <button onClick={onBack} style={{padding:"6px 14px",borderRadius:8,border:"2px solid #1B5E20",background:"transparent",color:"#1B5E20",fontSize:12,fontWeight:700,cursor:"pointer",marginBottom:16}}>BACK</button>
     <div style={{textAlign:"center",marginBottom:20}}><div style={{fontSize:22,fontWeight:900,color:"#1B5E20",fontFamily:"'Fira Mono',monospace"}}>GAME HISTORY</div></div>
     {games.length===0?<div style={{textAlign:"center",padding:40,color:"#b0a88a"}}>No games yet.</div>:
       games.slice().reverse().map((g,i)=>{const oR=Object.values(g.ourScoreByInning||{}).reduce((a,b)=>a+b,0);
         const opR=Object.values(g.oppScoreByInning||{}).reduce((a,b)=>a+b,0);const w=oR>opR,t=oR===opR;
-        return(<button key={i} onClick={()=>onView(g)} style={{display:"block",width:"100%",padding:16,borderRadius:12,border:"1px solid #e0dcc8",background:"#faf8f2",marginBottom:8,cursor:"pointer",textAlign:"left"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <div><div style={{fontSize:14,fontWeight:700,color:"#1B5E20"}}>vs {g.opponent||"?"}</div>
-              <div style={{fontSize:11,color:"#8d7b5a",marginTop:2}}>{g.date}{g.field?` • ${g.field}`:""}</div></div>
-            <div style={{textAlign:"right"}}>
-              <div style={{fontSize:20,fontWeight:900,fontFamily:"'Fira Mono',monospace",color:w?"#4CAF50":t?"#FF9800":"#F44336"}}>{oR} - {opR}</div>
-              <div style={{fontSize:10,fontWeight:700,color:w?"#4CAF50":t?"#FF9800":"#F44336"}}>{w?"WIN":t?"TIE":"LOSS"}</div></div>
-          </div></button>)})}
+        return(<div key={g.id||i} style={{position:"relative",marginBottom:8}}>
+          <button onClick={()=>onView(g)} style={{display:"block",width:"100%",padding:"16px 40px 16px 16px",borderRadius:12,border:"1px solid #e0dcc8",background:"#faf8f2",cursor:"pointer",textAlign:"left"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div><div style={{fontSize:14,fontWeight:700,color:"#1B5E20"}}>vs {g.opponent||"?"}</div>
+                <div style={{fontSize:11,color:"#8d7b5a",marginTop:2}}>{g.date}{g.field?` • ${g.field}`:""}</div></div>
+              <div style={{textAlign:"right"}}>
+                <div style={{fontSize:20,fontWeight:900,fontFamily:"'Fira Mono',monospace",color:w?"#4CAF50":t?"#FF9800":"#F44336"}}>{oR} - {opR}</div>
+                <div style={{fontSize:10,fontWeight:700,color:w?"#4CAF50":t?"#FF9800":"#F44336"}}>{w?"WIN":t?"TIE":"LOSS"}</div></div>
+            </div></button>
+          <button onClick={(e)=>{e.stopPropagation();setDelConf(g.id||i)}} style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",
+            background:"none",border:"none",color:"#ccc",cursor:"pointer",fontSize:20,lineHeight:1,padding:4}}
+            onMouseEnter={e=>e.currentTarget.style.color="#F44336"} onMouseLeave={e=>e.currentTarget.style.color="#ccc"}>×</button>
+        </div>)})}
+    {delConf!==null&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{background:"#faf8f2",borderRadius:16,padding:24,maxWidth:320,width:"100%",textAlign:"center",boxShadow:"0 20px 60px rgba(0,0,0,.3)"}}>
+        <div style={{fontSize:14,fontWeight:600,color:"#333",marginBottom:8}}>Delete this game?</div>
+        <div style={{fontSize:12,color:"#8d7b5a",marginBottom:20}}>This will remove the game and all its stats permanently.</div>
+        <div style={{display:"flex",gap:10}}>
+          <button onClick={()=>setDelConf(null)} style={{flex:1,padding:12,borderRadius:10,border:"2px solid #c8a96e",background:"transparent",color:"#8d7b5a",fontWeight:700,cursor:"pointer"}}>Cancel</button>
+          <button onClick={()=>{onDelete(delConf);setDelConf(null)}} style={{flex:1,padding:12,borderRadius:10,border:"none",background:"#F44336",color:"#fff",fontWeight:700,cursor:"pointer"}}>Delete</button>
+        </div></div></div>}
   </div>);
 }
 
@@ -386,6 +400,7 @@ function App(){
   const [newP,setNewP]=useState("");
   const [dragI,setDragI]=useState(null);
   const [rmConf,setRmConf]=useState(null);
+  const [skipConf,setSkipConf]=useState(null);
 
   useEffect(()=>{sv("games",games)},[games]);
   useEffect(()=>{sv("roster",roster)},[roster]);
@@ -424,7 +439,7 @@ function App(){
 
   // ─── ROUTING ───
   if(scr==="stats")return<StatsPage games={games} onBack={()=>setScr("setup")}/>;
-  if(scr==="history")return<HistoryPage games={games} onBack={()=>setScr("setup")} onView={g=>{setViewG(g);setScr("detail")}}/>;
+  if(scr==="history")return<HistoryPage games={games} onBack={()=>setScr("setup")} onView={g=>{setViewG(g);setScr("detail")}} onDelete={id=>setGames(p=>p.filter(g=>(g.id||0)!==id))}/>;
   if(scr==="detail"&&viewG)return<GameDetail game={viewG} onBack={()=>setScr("history")}/>;
   if(scr==="sync")return<SyncPage games={games} onBack={()=>setScr("setup")} onSynced={ids=>setGames(p=>p.map(g=>ids.includes(g.id)?{...g,synced:true}:g))}/>;
   if(scr==="summary")return<Summary gd={gd} plays={plays} ourS={ourS} oppS={oppS} onSave={saveG}/>;
@@ -450,11 +465,33 @@ function App(){
         <div style={{fontSize:11,color:"#8d7b5a",fontWeight:600,letterSpacing:1}}>NOW BATTING</div>
         <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
           <span style={{fontSize:22,fontWeight:900,color:"#1B5E20",fontFamily:"'Fira Mono',monospace"}}>{curBat}</span>
-          <button onClick={()=>setPicking(!picking)} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #c8a96e",background:"transparent",color:"#8d7b5a",fontSize:10,fontWeight:600,cursor:"pointer"}}>SWITCH</button></div>
-        <div style={{fontSize:11,color:"#8d7b5a"}}>#{(batIdx%gd.lineup.length)+1} in order</div></div>
+          <button onClick={()=>setPicking(!picking)} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #c8a96e",background:"transparent",color:"#8d7b5a",fontSize:10,fontWeight:600,cursor:"pointer"}}>SWITCH</button>
+          <button onClick={()=>setSkipConf(curBat)} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #F44336",background:"transparent",color:"#F44336",fontSize:10,fontWeight:600,cursor:"pointer"}}>SKIP</button></div>
+        <div style={{fontSize:11,color:"#8d7b5a"}}>#{(batIdx%gd.lineup.length)+1} in order • {gd.lineup.length} in lineup</div></div>
       {picking&&<div style={{background:"#fff",borderRadius:12,border:"1px solid #e0dcc8",padding:8,marginBottom:8,boxShadow:"0 4px 16px rgba(0,0,0,.1)"}}>
         {gd.lineup.map(n=><button key={n} onClick={()=>{const idx=gd.lineup.indexOf(n);if(idx>=0)setBatIdx(idx+Math.floor(batIdx/gd.lineup.length)*gd.lineup.length);setPicking(false)}}
           style={{display:"block",width:"100%",padding:"8px 12px",textAlign:"left",border:"none",background:n===curBat?"#e8f5e9":"transparent",borderRadius:6,cursor:"pointer",fontSize:13,fontWeight:600,color:"#1B5E20"}}>{n}</button>)}</div>}
+      {skipConf&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+        <div style={{background:"#faf8f2",borderRadius:16,padding:24,maxWidth:340,width:"100%",textAlign:"center",boxShadow:"0 20px 60px rgba(0,0,0,.3)"}}>
+          <div style={{fontSize:16,fontWeight:700,color:"#1B5E20",marginBottom:8}}>Remove {skipConf}?</div>
+          <div style={{fontSize:12,color:"#8d7b5a",marginBottom:6}}>They'll be removed from the batting order for the rest of this game.</div>
+          <div style={{display:"flex",gap:8,marginTop:16}}>
+            <button onClick={()=>setSkipConf(null)} style={{flex:1,padding:12,borderRadius:10,border:"2px solid #c8a96e",background:"transparent",color:"#8d7b5a",fontWeight:700,cursor:"pointer"}}>Cancel</button>
+            <button onClick={()=>{const idx=gd.lineup.indexOf(skipConf);const newLu=gd.lineup.filter(n=>n!==skipConf);
+              if(newLu.length===0){setSkipConf(null);return}
+              setGd({...gd,lineup:newLu});
+              if(batIdx>=newLu.length)setBatIdx(batIdx%newLu.length);
+              setSkipConf(null)}}
+              style={{flex:1,padding:12,borderRadius:10,border:"none",background:"#FF9800",color:"#fff",fontWeight:700,cursor:"pointer"}}>Skip Only</button>
+            <button onClick={()=>{const newLu=gd.lineup.filter(n=>n!==skipConf);
+              if(newLu.length===0){setSkipConf(null);return}
+              const nb={...bases};if(nb.first===skipConf)nb.first=null;if(nb.second===skipConf)nb.second=null;if(nb.third===skipConf)nb.third=null;
+              setBases(nb);setGd({...gd,lineup:newLu});
+              if(batIdx>=newLu.length)setBatIdx(batIdx%newLu.length);
+              setSkipConf(null)}}
+              style={{flex:1,padding:12,borderRadius:10,border:"none",background:"#F44336",color:"#fff",fontWeight:700,cursor:"pointer"}}>Remove + Clear Base</button>
+          </div>
+        </div></div>}
       <div style={{background:"#faf8f2",borderRadius:14,padding:14,marginTop:6,border:"1px solid #e0dcc8"}}>
         <div style={{fontSize:11,color:"#8d7b5a",fontWeight:600,letterSpacing:1,marginBottom:6}}>HITS</div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6,marginBottom:10}}>
