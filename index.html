@@ -286,17 +286,34 @@ function SyncPage({games,onBack,onSynced}){
   </div>);
 }
 
-// ─── Outcome Modal ───
+// ─── Outcome Modal with runner advancement ───
 function OutModal({batter,outcome,onOk,onNo,bases}){
-  const isHR=outcome==="HR",isFC=outcome==="FC",isOut=OUTS.includes(outcome);
-  const runners=[];if(bases.third)runners.push(bases.third);if(bases.second)runners.push(bases.second);if(bases.first)runners.push(bases.first);
-  const [scored,setScored]=useState(()=>isHR?[...runners,batter]:[]);
+  const isHR=outcome==="HR",isFC=outcome==="FC",isOut=OUTS.includes(outcome),isSF=outcome==="SF";
+  const reachBase=HITS.includes(outcome)||outcome==="BB"||isFC;
+  const rl=[];
+  if(bases.third)rl.push({name:bases.third,from:"3rd"});
+  if(bases.second)rl.push({name:bases.second,from:"2nd"});
+  if(bases.first)rl.push({name:bases.first,from:"1st"});
+  const getDef=()=>{const d={};
+    if(isHR){rl.forEach(r=>d[r.name]="scored");d[batter]="scored";return d}
+    rl.forEach(r=>{
+      if(outcome==="1B"||outcome==="BB"||isFC){d[r.name]=r.from==="3rd"?"scored":r.from==="2nd"?"3rd":"2nd"}
+      else if(outcome==="2B"){d[r.name]=(r.from==="3rd"||r.from==="2nd")?"scored":"3rd"}
+      else if(outcome==="3B"){d[r.name]="scored"}
+      else if(isSF){d[r.name]=r.from==="3rd"?"scored":"stay"}
+      else{d[r.name]="stay"}});return d};
+  const [adv,setAdv]=useState(getDef);
   const [fcB,setFcB]=useState("1st");
-  const tog=n=>{if(isHR)return;setScored(p=>p.includes(n)?p.filter(x=>x!==n):[...p,n])};
-  const show=!isOut&&(runners.length>0||isHR);
+  const setRA=(n,v)=>setAdv(p=>({...p,[n]:v}));
+  const getOpts=f=>{const o=[{v:"stay",l:"Stay"}];
+    if(f==="1st")o.push({v:"2nd",l:"→ 2nd"},{v:"3rd",l:"→ 3rd"},{v:"scored",l:"→ Scored"});
+    if(f==="2nd")o.push({v:"3rd",l:"→ 3rd"},{v:"scored",l:"→ Scored"});
+    if(f==="3rd")o.push({v:"scored",l:"→ Scored"});return o};
+  const sp=Object.entries(adv).filter(([,v])=>v==="scored").map(([n])=>n);
+  const showR=(reachBase||isSF)&&rl.length>0;
   return(
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div style={{background:"#faf8f2",borderRadius:20,padding:24,maxWidth:360,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,.3)",maxHeight:"90vh",overflowY:"auto"}}>
+      <div style={{background:"#faf8f2",borderRadius:20,padding:24,maxWidth:380,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,.3)",maxHeight:"90vh",overflowY:"auto"}}>
         <div style={{textAlign:"center",marginBottom:16}}>
           <div style={{fontSize:13,color:"#8d7b5a",fontWeight:600}}>{batter}</div>
           <div style={{display:"inline-block",marginTop:6,padding:"5px 16px",borderRadius:20,background:OC[outcome],color:"#fff",fontWeight:800,fontSize:15,fontFamily:"'Fira Mono',monospace"}}>
@@ -306,25 +323,32 @@ function OutModal({batter,outcome,onOk,onNo,bases}){
           <div style={{display:"flex",gap:6,marginTop:6}}>
             {["1st","2nd","3rd","Home"].map(b=><button key={b} onClick={()=>setFcB(b)} style={{flex:1,padding:"8px 0",borderRadius:8,border:"none",cursor:"pointer",
               background:fcB===b?"#795548":"#efebe9",color:fcB===b?"#fff":"#795548",fontWeight:700,fontSize:12}}>{b}</button>)}</div></div>}
-        {show&&<div style={{marginBottom:14}}>
-          <label style={{fontSize:11,fontWeight:700,color:"#1B5E20"}}>{isHR?"RUNS SCORED (AUTO)":"WHO SCORED?"}</label>
-          <div style={{display:"flex",flexDirection:"column",gap:6,marginTop:8}}>
-            {[...runners,...(isHR?[batter]:[])].map(n=>{const sel=isHR||scored.includes(n);
-              return(<button key={n} onClick={()=>tog(n)} disabled={isHR} style={{display:"flex",alignItems:"center",justifyContent:"space-between",
-                padding:"10px 14px",borderRadius:10,border:"none",cursor:isHR?"default":"pointer",
-                background:sel?"#1B5E20":"#e8f5e9",color:sel?"#FFD600":"#1B5E20",fontWeight:700,fontSize:13,fontFamily:"'Fira Mono',monospace"}}>
-                <span>{n}</span><span>{sel?"✓ SCORED":"tap if scored"}</span></button>)})}
-            {!isHR&&runners.length>0&&!runners.includes(batter)&&
-              <button onClick={()=>tog(batter)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",
-                padding:"10px 14px",borderRadius:10,border:"1px dashed #c8a96e",cursor:"pointer",
-                background:scored.includes(batter)?"#1B5E20":"transparent",color:scored.includes(batter)?"#FFD600":"#8d7b5a",fontWeight:700,fontSize:13}}>
-                <span>{batter} (batter)</span><span>{scored.includes(batter)?"✓ SCORED":"tap if scored"}</span></button>}
-          </div></div>}
+        {isHR&&<div style={{marginBottom:14}}>
+          <label style={{fontSize:11,fontWeight:700,color:"#1B5E20"}}>EVERYONE SCORES</label>
+          <div style={{display:"flex",flexDirection:"column",gap:4,marginTop:6}}>
+            {[...rl.map(r=>r.name),batter].map(n=>
+              <div key={n} style={{padding:"8px 14px",borderRadius:8,background:"#1B5E20",color:"#FFD600",fontWeight:700,fontSize:13,fontFamily:"'Fira Mono',monospace",display:"flex",justifyContent:"space-between"}}>
+                <span>{n}</span><span>✓ SCORED</span></div>)}</div></div>}
+        {showR&&!isHR&&<div style={{marginBottom:14}}>
+          <label style={{fontSize:11,fontWeight:700,color:"#1B5E20",letterSpacing:1}}>RUNNERS</label>
+          <div style={{display:"flex",flexDirection:"column",gap:8,marginTop:8}}>
+            {rl.map(r=>{const opts=getOpts(r.from);const cur=adv[r.name]||"stay";
+              return(<div key={r.name} style={{background:"#fff",borderRadius:10,padding:12,border:"1px solid #e0dcc8"}}>
+                <div style={{fontSize:12,fontWeight:700,color:"#1B5E20",marginBottom:6}}>{r.name} <span style={{fontWeight:400,color:"#8d7b5a"}}>(on {r.from})</span></div>
+                <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+                  {opts.map(o=><button key={o.v} onClick={()=>setRA(r.name,o.v)}
+                    style={{padding:"6px 10px",borderRadius:8,border:"none",cursor:"pointer",fontSize:11,fontWeight:700,
+                      background:cur===o.v?(o.v==="scored"?"#1B5E20":"#FF9800"):"#e8f5e9",
+                      color:cur===o.v?"#fff":"#1B5E20",fontFamily:"'Fira Mono',monospace"}}>{o.l}</button>)}</div>
+              </div>)})}
+          </div>
+          {sp.length>0&&<div style={{marginTop:8,textAlign:"center",fontSize:13,fontWeight:800,color:"#1B5E20"}}>{sp.length} run{sp.length!==1?"s":""} scored</div>}
+        </div>}
         <div style={{display:"flex",gap:10,marginTop:4}}>
           <button onClick={onNo} style={{flex:1,padding:12,borderRadius:10,border:"2px solid #c8a96e",background:"transparent",color:"#8d7b5a",fontWeight:700,fontSize:13,cursor:"pointer"}}>Cancel</button>
-          <button onClick={()=>{const fs=isHR?[...runners,batter]:scored;
-            const rbi=isHR?runners.length+1:outcome==="SF"?scored.length:scored.filter(n=>n!==batter).length;
-            onOk(rbi,fs.includes(batter)?1:0,fs,isFC?fcB:null)}}
+          <button onClick={()=>{const fs=isHR?[...rl.map(r=>r.name),batter]:sp;
+            const rbi=isHR?rl.length+1:isSF?sp.length:sp.filter(n=>n!==batter).length;
+            onOk(rbi,fs.includes(batter)?1:0,fs,isFC?fcB:null,adv)}}
             style={{flex:2,padding:12,borderRadius:10,border:"none",background:"#1B5E20",color:"#FFD600",fontWeight:800,fontSize:13,cursor:"pointer"}}>Confirm</button>
         </div></div></div>);
 }
@@ -401,27 +425,52 @@ function App(){
   const [dragI,setDragI]=useState(null);
   const [rmConf,setRmConf]=useState(null);
   const [skipConf,setSkipConf]=useState(null);
+  const [waitOpp,setWaitOpp]=useState(false);
 
   useEffect(()=>{sv("games",games)},[games]);
   useEffect(()=>{sv("roster",roster)},[roster]);
 
   const curBat=gd?.lineup?.[batIdx%(gd?.lineup?.length||1)]||"";
 
-  const doPlay=(rbi,batScored,scored,fcB)=>{
-    const{batter,outcome}=modal;const nb={...bases};
-    if(["1B","BB","FC"].includes(outcome)){nb.third=nb.second;nb.second=nb.first;nb.first=batter}
-    else if(outcome==="2B"){nb.third=nb.first||nb.second;nb.second=batter;nb.first=null}
-    else if(outcome==="3B"){nb.third=batter;nb.second=null;nb.first=null}
-    else if(outcome==="HR"){nb.first=null;nb.second=null;nb.third=null}
-    (scored||[]).forEach(n=>{if(nb.first===n)nb.first=null;if(nb.second===n)nb.second=null;if(nb.third===n)nb.third=null});
+  const doPlay=(rbi,batScored,scored,fcB,adv)=>{
+    const{batter,outcome}=modal;const nb={first:null,second:null,third:null};
+    // Place runners based on advancement choices
+    if(adv&&!isHR){
+      Object.entries(adv).forEach(([name,dest])=>{
+        if(dest==="1st")nb.first=name;
+        else if(dest==="2nd")nb.second=name;
+        else if(dest==="3rd")nb.third=name;
+        // "scored" and "stay" handled: stay keeps them where they were
+        else if(dest==="stay"){
+          if(bases.first===name)nb.first=name;
+          if(bases.second===name)nb.second=name;
+          if(bases.third===name)nb.third=name;
+        }
+      });
+    }
+    // Place the batter on their base (if they reached)
+    const isHR=outcome==="HR";
+    if(isHR){nb.first=null;nb.second=null;nb.third=null}
+    else if(outcome==="1B"||outcome==="BB"||outcome==="FC"){if(!nb.first)nb.first=batter;else if(!nb.second)nb.second=batter;else nb.third=batter}
+    else if(outcome==="2B"){if(!nb.second)nb.second=batter;else nb.third=batter}
+    else if(outcome==="3B"){nb.third=batter}
+    else if(OUTS.includes(outcome)||outcome==="SF"){
+      // Outs: keep runners where advancement says, batter doesn't go on base
+      // But if no adv data (pure out with no runners), keep current bases
+      if(!adv||Object.keys(adv).length===0){nb.first=bases.first;nb.second=bases.second;nb.third=bases.third}
+    }
     const tr=(scored||[]).length;if(tr>0)setOurS(p=>({...p,[inn]:(p[inn]||0)+tr}));
     const play={batter,outcome,rbi,runs:batScored,scoredPlayers:scored||[],inning:inn,outs,fcBase:fcB};
     setPlays(p=>[...p,play]);setBases(nb);setLastO(outcome);setModal(null);
     if(OUTS.includes(outcome)||outcome==="SF"||outcome==="FC"){
-      const no=outs+1;if(no>=3){setOuts(3);setTimeout(()=>setOppAsk(inn),600)}else setOuts(no)}
+      const no=outs+1;if(no>=3){setOuts(3);
+        // Away: wait for opponent to bat. Home: ask opponent score immediately
+        if(gd.isHome){setTimeout(()=>setOppAsk(inn),600)}
+        else{setWaitOpp(true)}}
+      else setOuts(no)}
     setBatIdx(p=>p+1)};
 
-  const doOpp=sc=>{setOppS(p=>({...p,[oppAsk]:(p[oppAsk]||0)+sc}));setOppAsk(null);setOuts(0);setInn(p=>p+1);setBases({first:null,second:null,third:null});setLastO(null)};
+  const doOpp=sc=>{setOppS(p=>({...p,[oppAsk]:(p[oppAsk]||0)+sc}));setOppAsk(null);setWaitOpp(false);setOuts(0);setInn(p=>p+1);setBases({first:null,second:null,third:null});setLastO(null)};
 
   const undo=()=>{if(!plays.length)return;const np=plays.slice(0,-1);setPlays(np);setBatIdx(p=>Math.max(0,p-1));
     setBases({first:null,second:null,third:null});setLastO(np.length?np[np.length-1].outcome:null);
@@ -503,6 +552,12 @@ function App(){
         <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6}}>
           {OTHER.map(c=><button key={c} onClick={()=>setModal({batter:curBat,outcome:c})} style={{padding:"10px 4px",borderRadius:10,border:"none",cursor:"pointer",background:OC[c],color:"#fff",fontWeight:700,fontSize:12,fontFamily:"'Fira Mono',monospace"}}>{c}</button>)}</div></div>
       <Scoreboard opp={gd.opponent} ourS={ourS} oppS={oppS} isHome={gd.isHome}/>
+      {waitOpp&&<div style={{background:"#FFF3E0",borderRadius:12,padding:16,marginTop:12,border:"2px solid #FF9800",textAlign:"center"}}>
+        <div style={{fontSize:13,fontWeight:700,color:"#E65100",marginBottom:8}}>Waiting for {gd.opponent||"opponent"} to bat...</div>
+        <div style={{fontSize:11,color:"#8d7b5a",marginBottom:12}}>Tap below when their half-inning is done</div>
+        <button onClick={()=>setOppAsk(inn)} style={{padding:"12px 24px",borderRadius:10,border:"none",background:"#FF9800",color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer"}}>
+          THEIR INNING IS OVER</button>
+      </div>}
       {plays.length>0&&<div style={{textAlign:"center",marginTop:12}}>
         <button onClick={undo} style={{padding:"6px 16px",borderRadius:8,border:"1px solid #F44336",background:"transparent",color:"#F44336",fontSize:11,fontWeight:700,cursor:"pointer"}}>UNDO LAST</button></div>}
       {modal&&<OutModal batter={modal.batter} outcome={modal.outcome} bases={bases} onOk={doPlay} onNo={()=>setModal(null)}/>}
