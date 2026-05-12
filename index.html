@@ -742,12 +742,11 @@ function App(){
         <div style={{fontSize:14,letterSpacing:3,color:"#8d7b5a",fontWeight:600}}>SLO-PITCH</div>
         <div style={{fontSize:32,fontWeight:900,color:"#1B5E20",letterSpacing:2,fontFamily:FM,lineHeight:1.1}}>{TEAM}</div>
         <div style={{fontSize:13,color:"#8d7b5a",marginTop:4}}>STAT TRACKER</div></div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 1fr",gap:5,marginBottom:16}}>
-        <button onClick={()=>setScr("stats")} style={{padding:10,borderRadius:10,border:"2px solid #1B5E20",background:"transparent",color:"#1B5E20",fontWeight:700,fontSize:9,cursor:"pointer"}}>STATS</button>
-        <button onClick={()=>setScr("history")} style={{padding:10,borderRadius:10,border:"2px solid #1B5E20",background:"transparent",color:"#1B5E20",fontWeight:700,fontSize:9,cursor:"pointer"}}>GAMES</button>
-        <button onClick={()=>{if(sheetLink)window.open(sheetLink,"_blank");else setScr("sync")}} style={{padding:10,borderRadius:10,border:"2px solid #4CAF50",background:sheetLink?"#4CAF50":"transparent",color:sheetLink?"#fff":"#4CAF50",fontWeight:700,fontSize:9,cursor:"pointer"}}>SHEET</button>
-        <button onClick={()=>setScr("sync")} style={{padding:10,borderRadius:10,border:"2px solid #1B5E20",background:"transparent",color:"#1B5E20",fontWeight:700,fontSize:9,cursor:"pointer"}}>SYNC</button>
-        <button onClick={()=>setShowShare(true)} disabled={!roster.length} style={{padding:10,borderRadius:10,border:"2px solid #FF9800",background:"transparent",color:"#FF9800",fontWeight:700,fontSize:9,cursor:roster.length?"pointer":"default",opacity:roster.length?1:.4}}>SHARE</button>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:6,marginBottom:16}}>
+        <button onClick={()=>setScr("stats")} style={{padding:10,borderRadius:10,border:"2px solid #1B5E20",background:"transparent",color:"#1B5E20",fontWeight:700,fontSize:10,cursor:"pointer"}}>STATS</button>
+        <button onClick={()=>setScr("history")} style={{padding:10,borderRadius:10,border:"2px solid #1B5E20",background:"transparent",color:"#1B5E20",fontWeight:700,fontSize:10,cursor:"pointer"}}>GAMES</button>
+        <button onClick={()=>setScr("sync")} style={{padding:10,borderRadius:10,border:"2px solid #1B5E20",background:"transparent",color:"#1B5E20",fontWeight:700,fontSize:10,cursor:"pointer"}}>SYNC</button>
+        <button onClick={()=>setShowShare(true)} disabled={!roster.length} style={{padding:10,borderRadius:10,border:"2px solid #FF9800",background:"transparent",color:"#FF9800",fontWeight:700,fontSize:10,cursor:roster.length?"pointer":"default",opacity:roster.length?1:.4}}>SHARE</button>
       </div>
       <div style={{background:"#faf8f2",borderRadius:16,padding:20,marginBottom:16,border:"1px solid #e0dcc8"}}>
         <div style={{fontSize:12,fontWeight:700,color:"#8d7b5a",marginBottom:12}}>GAME INFO</div>
