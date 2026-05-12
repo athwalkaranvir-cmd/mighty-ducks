@@ -239,7 +239,7 @@ function SyncPage({games,onBack,onSynced,sheetLink,setSheetLink}){
   const doTest=async()=>{if(!url.trim()){setStatus("Paste URL first.");return}setBusy(true);setStatus("Testing...");
     try{const r=await fetch(url.trim());const d=await r.json();setStatus(d.status==="ok"?"✓ Connected!":"Unexpected: "+JSON.stringify(d))}
     catch(e){setStatus("Failed: "+e.message)}setBusy(false)};
-  const saveSheet=()=>{setSheetLink(localSheet);sv("sheet_link",localSheet);setStatus("✓ Sheet link saved! The SHEET button on the home screen will open it.")};
+  const saveSheet=()=>{setSheetLink(localSheet);sv("sheet_link",localSheet);setStatus("✓ Sheet link saved!")};
   return(<div style={{maxWidth:480,margin:"0 auto",padding:20}}>
     <button onClick={onBack} style={{padding:"6px 14px",borderRadius:8,border:"2px solid #1B5E20",background:"transparent",color:"#1B5E20",fontSize:12,fontWeight:700,cursor:"pointer",marginBottom:16}}>BACK</button>
     <div style={{textAlign:"center",marginBottom:20}}><div style={{fontSize:22,fontWeight:900,color:"#1B5E20",fontFamily:FM}}>SYNC SETTINGS</div></div>
@@ -247,7 +247,7 @@ function SyncPage({games,onBack,onSynced,sheetLink,setSheetLink}){
     {/* Google Sheet Link */}
     <div style={{background:"#faf8f2",borderRadius:16,padding:20,border:"1px solid #e0dcc8",marginBottom:16}}>
       <div style={{fontSize:12,fontWeight:700,color:"#4CAF50",letterSpacing:1,marginBottom:10}}>GOOGLE SHEET LINK</div>
-      <div style={{fontSize:11,color:"#8d7b5a",marginBottom:8}}>Paste your Google Sheet URL here. This adds a SHEET button to the home screen so anyone can view team stats.</div>
+      <div style={{fontSize:11,color:"#8d7b5a",marginBottom:8}}>Paste your Google Sheet URL here. This gets included when you share the roster link with teammates.</div>
       <input value={localSheet} onChange={e=>setLocalSheet(e.target.value)} placeholder="https://docs.google.com/spreadsheets/d/..."
         style={{width:"100%",padding:"10px 12px",borderRadius:10,border:"2px solid #e0dcc8",fontSize:11,fontFamily:FM,background:"#fff",outline:"none",boxSizing:"border-box"}}/>
       <button onClick={saveSheet} style={{width:"100%",padding:12,borderRadius:10,border:"none",background:"#4CAF50",color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",marginTop:8}}>
