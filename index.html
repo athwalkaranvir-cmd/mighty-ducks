@@ -91,9 +91,13 @@ function aggStats(games){
     inG.forEach(n=>{if(c[n])c[n].G++})});return c;
 }
 
+const MIN_G=10;// Minimum games to qualify for rankings (40% of 24 game season)
+
 function StatsPage({games,onBack}){
   const [tab,setTab]=useState("stats");const c=aggStats(games);
   const pl=Object.entries(c).filter(([,s])=>s.AB>0||s.G>0).sort((a,b)=>(b[1].AB>0?b[1].H/b[1].AB:0)-(a[1].AB>0?a[1].H/a[1].AB:0));
+  const qualPl=pl.filter(([,s])=>s.G>=MIN_G);// Qualified for rankings
+  const unqPl=pl.filter(([,s])=>s.G<MIN_G&&s.G>0);
   const rc=[{l:"AVG",f:s=>s.AB>0?s.H/s.AB:0,fm:v=>v.toFixed(3)},{l:"SLG",f:s=>s.AB>0?(s["1B"]+s["2B"]*2+s["3B"]*3+s.HR*4)/s.AB:0,fm:v=>v.toFixed(3)},
     {l:"OBP",f:s=>(s.AB+s.BB+s.SF)>0?(s.H+s.BB)/(s.AB+s.BB+s.SF):0,fm:v=>v.toFixed(3)},
     {l:"H",f:s=>s.H},{l:"R",f:s=>s.R},{l:"RBI",f:s=>s.RBI},{l:"HR",f:s=>s.HR},{l:"2B",f:s=>s["2B"]},{l:"3B",f:s=>s["3B"]},
@@ -121,17 +125,25 @@ function StatsPage({games,onBack}){
             <td style={{padding:"4px 2px",textAlign:"center",fontWeight:700,color:"#9C27B0"}}>{slg}</td>
             <td style={{padding:"4px 2px",textAlign:"center",fontWeight:700,color:"#FF6F00"}}>{obp}</td></tr>)})}</tbody>
       </table></div>:
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-      {rc.map(cat=>{const sorted=[...pl].sort((a,b)=>cat.f(b[1])-cat.f(a[1]));
-        const top5=sorted.slice(0,5).filter(([,s])=>cat.f(s)>0);if(!top5.length)return null;
-        return(<div key={cat.l} style={{background:"#faf8f2",borderRadius:12,padding:12,border:"1px solid #e0dcc8"}}>
-          <div style={{fontSize:11,fontWeight:800,color:"#1B5E20",letterSpacing:1,marginBottom:8,textAlign:"center"}}>{cat.l}</div>
-          {top5.map(([n,s],i)=>{const v=cat.f(s);const d=cat.fm?cat.fm(v):String(v);
-            return(<div key={n} style={{display:"flex",alignItems:"center",gap:6,padding:"3px 0",borderBottom:i<top5.length-1?"1px solid #e8e4d4":"none"}}>
-              <span style={{fontSize:12,fontWeight:800,fontFamily:FM,width:18,textAlign:"center",
-                color:i===0?"#FFD600":i===1?"#bdbdbd":i===2?"#A1887F":"#8d7b5a"}}>{i+1}</span>
-              <span style={{fontSize:11,fontWeight:600,color:"#1B5E20",flex:1}}>{n}</span>
-              <span style={{fontSize:11,fontWeight:800,color:"#1565C0",fontFamily:FM}}>{d}</span></div>)})}</div>)})}</div>}
+    <div>
+      <div style={{textAlign:"center",fontSize:11,color:"#8d7b5a",marginBottom:12,fontStyle:"italic"}}>Min. {MIN_G} games to qualify for rankings</div>
+      {qualPl.length===0?<div style={{textAlign:"center",padding:30,color:"#b0a88a",fontSize:13}}>No players have reached {MIN_G} games yet.</div>:
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        {rc.map(cat=>{const sorted=[...qualPl].sort((a,b)=>cat.f(b[1])-cat.f(a[1]));
+          const top5=sorted.slice(0,5).filter(([,s])=>cat.f(s)>0);if(!top5.length)return null;
+          return(<div key={cat.l} style={{background:"#faf8f2",borderRadius:12,padding:12,border:"1px solid #e0dcc8"}}>
+            <div style={{fontSize:11,fontWeight:800,color:"#1B5E20",letterSpacing:1,marginBottom:8,textAlign:"center"}}>{cat.l}</div>
+            {top5.map(([n,s],i)=>{const v=cat.f(s);const d=cat.fm?cat.fm(v):String(v);
+              return(<div key={n} style={{display:"flex",alignItems:"center",gap:6,padding:"3px 0",borderBottom:i<top5.length-1?"1px solid #e8e4d4":"none"}}>
+                <span style={{fontSize:12,fontWeight:800,fontFamily:FM,width:18,textAlign:"center",
+                  color:i===0?"#FFD600":i===1?"#bdbdbd":i===2?"#A1887F":"#8d7b5a"}}>{i+1}</span>
+                <span style={{fontSize:11,fontWeight:600,color:"#1B5E20",flex:1}}>{n}</span>
+                <span style={{fontSize:11,fontWeight:800,color:"#1565C0",fontFamily:FM}}>{d}</span></div>)})}</div>)})}</div>}
+      {unqPl.length>0&&<div style={{marginTop:16}}>
+        <div style={{fontSize:11,color:"#8d7b5a",fontWeight:600,marginBottom:8}}>NOT YET QUALIFIED ({MIN_G} games needed)</div>
+        {unqPl.map(([n,s])=><div key={n} style={{display:"flex",justifyContent:"space-between",padding:"4px 8px",fontSize:11,color:"#999"}}>
+          <span>{n}</span><span>{s.G} game{s.G!==1?"s":""}</span></div>)}</div>}
+    </div>}
   </div>);
 }
 
@@ -190,8 +202,9 @@ function HistoryPage({games,onBack,onView,onDelete}){
   </div>);
 }
 
-function SyncPage({games,onBack,onSynced}){
+function SyncPage({games,onBack,onSynced,sheetLink,setSheetLink}){
   const [url,setUrl]=useState(()=>ld("sync_url",""));const [status,setStatus]=useState("");const [busy,setBusy]=useState(false);
+  const [localSheet,setLocalSheet]=useState(sheetLink||"");
   const un=games.filter(g=>!g.synced);useEffect(()=>{if(url)sv("sync_url",url)},[url]);
   const doSync=async()=>{if(!url.trim()){setStatus("Paste your Apps Script URL above.");return}if(!un.length){setStatus("All synced!");return}
     setBusy(true);setStatus("Syncing "+un.length+" game(s)...");
@@ -201,11 +214,25 @@ function SyncPage({games,onBack,onSynced}){
   const doTest=async()=>{if(!url.trim()){setStatus("Paste URL first.");return}setBusy(true);setStatus("Testing...");
     try{const r=await fetch(url.trim());const d=await r.json();setStatus(d.status==="ok"?"✓ Connected!":"Unexpected: "+JSON.stringify(d))}
     catch(e){setStatus("Failed: "+e.message)}setBusy(false)};
+  const saveSheet=()=>{setSheetLink(localSheet);sv("sheet_link",localSheet);setStatus("✓ Sheet link saved! The SHEET button on the home screen will open it.")};
   return(<div style={{maxWidth:480,margin:"0 auto",padding:20}}>
     <button onClick={onBack} style={{padding:"6px 14px",borderRadius:8,border:"2px solid #1B5E20",background:"transparent",color:"#1B5E20",fontSize:12,fontWeight:700,cursor:"pointer",marginBottom:16}}>BACK</button>
-    <div style={{textAlign:"center",marginBottom:20}}><div style={{fontSize:22,fontWeight:900,color:"#1B5E20",fontFamily:FM}}>SYNC</div></div>
+    <div style={{textAlign:"center",marginBottom:20}}><div style={{fontSize:22,fontWeight:900,color:"#1B5E20",fontFamily:FM}}>SYNC SETTINGS</div></div>
+
+    {/* Google Sheet Link */}
     <div style={{background:"#faf8f2",borderRadius:16,padding:20,border:"1px solid #e0dcc8",marginBottom:16}}>
-      <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:16}}>
+      <div style={{fontSize:12,fontWeight:700,color:"#4CAF50",letterSpacing:1,marginBottom:10}}>GOOGLE SHEET LINK</div>
+      <div style={{fontSize:11,color:"#8d7b5a",marginBottom:8}}>Paste your Google Sheet URL here. This adds a SHEET button to the home screen so anyone can view team stats.</div>
+      <input value={localSheet} onChange={e=>setLocalSheet(e.target.value)} placeholder="https://docs.google.com/spreadsheets/d/..."
+        style={{width:"100%",padding:"10px 12px",borderRadius:10,border:"2px solid #e0dcc8",fontSize:11,fontFamily:FM,background:"#fff",outline:"none",boxSizing:"border-box"}}/>
+      <button onClick={saveSheet} style={{width:"100%",padding:12,borderRadius:10,border:"none",background:"#4CAF50",color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",marginTop:8}}>
+        SAVE SHEET LINK</button>
+    </div>
+
+    {/* Sync Section */}
+    <div style={{background:"#faf8f2",borderRadius:16,padding:20,border:"1px solid #e0dcc8",marginBottom:16}}>
+      <div style={{fontSize:12,fontWeight:700,color:"#1B5E20",letterSpacing:1,marginBottom:10}}>SYNC GAMES</div>
+      <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:12}}>
         <div style={{width:14,height:14,borderRadius:"50%",background:un.length?"#FF9800":"#4CAF50",flexShrink:0}}/>
         <span style={{fontSize:14,color:"#333",fontWeight:600}}>{un.length?`${un.length} pending`:"All synced"}</span></div>
       <label style={{fontSize:11,fontWeight:700,color:"#1B5E20",marginBottom:6,display:"block"}}>APPS SCRIPT URL</label>
@@ -216,10 +243,11 @@ function SyncPage({games,onBack,onSynced}){
           {busy?"SYNCING...":"SYNC "+un.length}</button></div>
       {status&&<div style={{marginTop:12,padding:12,borderRadius:8,background:status.includes("✓")?"#e8f5e9":"#fff3e0",color:status.includes("✓")?"#2E7D32":"#E65100",fontSize:12,lineHeight:1.5,whiteSpace:"pre-wrap"}}>{status}</div>}
     </div>
+
     <div style={{background:"#faf8f2",borderRadius:16,padding:20,border:"1px solid #e0dcc8"}}>
       <div style={{fontSize:12,fontWeight:700,color:"#1B5E20",marginBottom:12}}>SETUP GUIDE</div>
       <div style={{fontSize:12,color:"#555",lineHeight:1.8}}>
-        {["Create a blank Google Sheet","Extensions → Apps Script → paste the Mighty Ducks script","Deploy → New Deployment → Web App → Access: Anyone","Copy the URL, paste above","Hit Sync after each game"].map((t,i)=>
+        {["Create a blank Google Sheet","Extensions → Apps Script → paste the Mighty Ducks script","Deploy → New Deployment → Web App → Access: Anyone","Copy the Apps Script URL → paste in APPS SCRIPT URL above","Copy the Sheet URL → paste in GOOGLE SHEET LINK above","Hit Sync after each game"].map((t,i)=>
           <div key={i} style={{marginBottom:10,paddingLeft:28,position:"relative"}}>
             <span style={{position:"absolute",left:0,width:22,height:22,borderRadius:"50%",background:"#1B5E20",color:"#FFD600",fontWeight:800,fontSize:11,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:FM}}>{i+1}</span>{t}</div>)}</div></div>
   </div>);
@@ -344,6 +372,92 @@ function OppModal({inning,onOk}){const [sc,setSc]=useState(0);
     </div></div>);
 }
 
+// ─── Daily Awards (MVP & Shitter of the Day) ───
+function DailyAwards({games,date,onDone}){
+  // Get all games from this date
+  const todayGames=games.filter(g=>g.date===date&&g.plays);
+  if(todayGames.length<2)return(<div style={{maxWidth:480,margin:"0 auto",padding:20,textAlign:"center"}}>
+    <div style={{fontSize:14,color:"#8d7b5a",marginBottom:16}}>Play your 2nd game tonight to see daily awards!</div>
+    <button onClick={onDone} style={{padding:"12px 24px",borderRadius:10,border:"none",background:"#1B5E20",color:"#FFD600",fontWeight:800,fontSize:14,cursor:"pointer"}}>CONTINUE</button>
+  </div>);
+
+  // Aggregate stats across today's games
+  const dayStats={};
+  todayGames.forEach(g=>{
+    (g.plays||[]).forEach(p=>{
+      const n=p.batter,o=p.outcome;
+      if(!dayStats[n])dayStats[n]={AB:0,H:0,R:0,RBI:0,HR:0,"2B":0,"3B":0,TB:0,BB:0};
+      const s=dayStats[n];
+      if(!["BB","SF","FC"].includes(o))s.AB++;
+      if(HITS.includes(o)){s.H++;
+        if(o==="1B")s.TB+=1;if(o==="2B"){s.TB+=2;s["2B"]++}if(o==="3B"){s.TB+=3;s["3B"]++}if(o==="HR"){s.TB+=4;s.HR++}}
+      if(o==="BB")s.BB++;
+      s.RBI+=(p.rbi||0);
+    });
+    (g.plays||[]).forEach(p=>{(p.scoredPlayers||[]).forEach(n=>{if(dayStats[n])dayStats[n].R++})});
+  });
+
+  // Score each player: weighted formula
+  // Hits matter, extra base hits matter more, RBI/R matter, AVG matters
+  const scored=Object.entries(dayStats).filter(([,s])=>s.AB>0).map(([name,s])=>{
+    const avg=s.AB>0?s.H/s.AB:0;
+    const score=(s.H*2)+(s.TB*1.5)+(s.RBI*2)+(s.R*1.5)+(s.HR*3)+(s.BB*0.5)+(avg*5);
+    return{name,s,avg,score};
+  }).sort((a,b)=>b.score-a.score);
+
+  if(scored.length<2)return(<div style={{maxWidth:480,margin:"0 auto",padding:20,textAlign:"center"}}>
+    <button onClick={onDone} style={{padding:"12px 24px",borderRadius:10,border:"none",background:"#1B5E20",color:"#FFD600",fontWeight:800,fontSize:14,cursor:"pointer"}}>CONTINUE</button>
+  </div>);
+
+  const mvp=scored[0];
+  const shitter=scored[scored.length-1];
+
+  return(<div style={{maxWidth:480,margin:"0 auto",padding:20}}>
+    <div style={{textAlign:"center",marginBottom:20}}>
+      <div style={{fontSize:12,color:"#8d7b5a",fontWeight:600,letterSpacing:2}}>GAME NIGHT AWARDS</div>
+      <div style={{fontSize:11,color:"#8d7b5a",marginTop:4}}>{date}</div>
+    </div>
+
+    {/* MVP */}
+    <div style={{background:"linear-gradient(135deg,#1B5E20,#2E7D32)",borderRadius:16,padding:24,marginBottom:16,textAlign:"center",boxShadow:"0 8px 32px rgba(27,94,32,.3)"}}>
+      <div style={{fontSize:36,marginBottom:4}}>🏆</div>
+      <div style={{fontSize:12,color:"#A5D6A7",fontWeight:600,letterSpacing:2}}>MVP OF THE DAY</div>
+      <div style={{fontSize:28,fontWeight:900,color:"#FFD600",fontFamily:FM,marginTop:8}}>{mvp.name}</div>
+      <div style={{display:"flex",justifyContent:"center",gap:16,marginTop:12}}>
+        <div><div style={{fontSize:18,fontWeight:800,color:"#fff",fontFamily:FM}}>{mvp.s.H}-{mvp.s.AB}</div>
+          <div style={{fontSize:9,color:"#A5D6A7"}}>H-AB</div></div>
+        <div><div style={{fontSize:18,fontWeight:800,color:"#fff",fontFamily:FM}}>{mvp.avg.toFixed(3)}</div>
+          <div style={{fontSize:9,color:"#A5D6A7"}}>AVG</div></div>
+        <div><div style={{fontSize:18,fontWeight:800,color:"#fff",fontFamily:FM}}>{mvp.s.RBI}</div>
+          <div style={{fontSize:9,color:"#A5D6A7"}}>RBI</div></div>
+        <div><div style={{fontSize:18,fontWeight:800,color:"#fff",fontFamily:FM}}>{mvp.s.R}</div>
+          <div style={{fontSize:9,color:"#A5D6A7"}}>R</div></div>
+        {mvp.s.HR>0&&<div><div style={{fontSize:18,fontWeight:800,color:"#fff",fontFamily:FM}}>{mvp.s.HR}</div>
+          <div style={{fontSize:9,color:"#A5D6A7"}}>HR</div></div>}
+      </div>
+    </div>
+
+    {/* Shitter */}
+    <div style={{background:"linear-gradient(135deg,#4E342E,#6D4C41)",borderRadius:16,padding:24,marginBottom:16,textAlign:"center",boxShadow:"0 8px 32px rgba(78,52,46,.3)"}}>
+      <div style={{fontSize:36,marginBottom:4}}>💩</div>
+      <div style={{fontSize:12,color:"#BCAAA4",fontWeight:600,letterSpacing:2}}>SHITTER OF THE DAY</div>
+      <div style={{fontSize:28,fontWeight:900,color:"#FF8A65",fontFamily:FM,marginTop:8}}>{shitter.name}</div>
+      <div style={{display:"flex",justifyContent:"center",gap:16,marginTop:12}}>
+        <div><div style={{fontSize:18,fontWeight:800,color:"#fff",fontFamily:FM}}>{shitter.s.H}-{shitter.s.AB}</div>
+          <div style={{fontSize:9,color:"#BCAAA4"}}>H-AB</div></div>
+        <div><div style={{fontSize:18,fontWeight:800,color:"#fff",fontFamily:FM}}>{shitter.avg.toFixed(3)}</div>
+          <div style={{fontSize:9,color:"#BCAAA4"}}>AVG</div></div>
+        <div><div style={{fontSize:18,fontWeight:800,color:"#fff",fontFamily:FM}}>{shitter.s.RBI}</div>
+          <div style={{fontSize:9,color:"#BCAAA4"}}>RBI</div></div>
+        <div><div style={{fontSize:18,fontWeight:800,color:"#fff",fontFamily:FM}}>{shitter.s.R}</div>
+          <div style={{fontSize:9,color:"#BCAAA4"}}>R</div></div>
+      </div>
+    </div>
+
+    <button onClick={onDone} style={{width:"100%",padding:16,borderRadius:14,border:"none",background:"#1B5E20",color:"#FFD600",fontWeight:900,fontSize:16,cursor:"pointer",fontFamily:FM,boxShadow:"0 6px 24px rgba(27,94,32,.3)"}}>DONE</button>
+  </div>);
+}
+
 function Summary({gd,plays,ourS,oppS,onSave}){
   const stats={};(gd.lineup||[]).forEach(n=>{stats[n]={AB:0,R:0,H:0,"1B":0,"2B":0,"3B":0,HR:0,RBI:0,BB:0}});
   plays.forEach(p=>{const s=stats[p.batter];if(!s)return;if(!["BB","SF","FC"].includes(p.outcome))s.AB++;
@@ -381,15 +495,46 @@ function App(){
   const [modal,setModal]=useState(null);const [games,setGames]=useState(()=>ld("games",[]));
   const [picking,setPicking]=useState(false);const [ourS,setOurS]=useState({});const [oppS,setOppS]=useState({});
   const [oppAsk,setOppAsk]=useState(null);const [viewG,setViewG]=useState(null);
-  const [roster,setRoster]=useState(()=>ld("roster",[]));const [lineup,setLineup]=useState([]);
+  const [roster,setRoster]=useState(()=>{
+    // Check URL for shared roster first
+    try{const params=new URLSearchParams(window.location.search);
+      const r=params.get("roster");
+      if(r){const decoded=JSON.parse(decodeURIComponent(r));
+        if(Array.isArray(decoded)&&decoded.length>0){
+          // Merge with existing roster (don't lose players)
+          const existing=ld("roster",[]);
+          const merged=[...new Set([...existing,...decoded])];
+          sv("roster",merged);
+          // Also grab sheet link if included
+          const sh=params.get("sheet");
+          if(sh){sv("sheet_link",sh)}
+          // Clean URL without reloading
+          window.history.replaceState({},"",window.location.pathname);
+          return merged}}}catch(e){}
+    return ld("roster",[])});
+  const [lineup,setLineup]=useState([]);
   const [opp,setOpp]=useState("");const [gNum,setGNum]=useState("");const [gDate,setGDate]=useState(new Date().toISOString().slice(0,10));
   const [field,setField]=useState("");const [isHome,setIsHome]=useState(true);const [newP,setNewP]=useState("");
   const [dragI,setDragI]=useState(null);const [rmConf,setRmConf]=useState(null);
   const [skipConf,setSkipConf]=useState(null);const [waitOpp,setWaitOpp]=useState(false);
   const [addLate,setAddLate]=useState(false);const [lateP,setLateP]=useState("");
+  const [awardDate,setAwardDate]=useState(null);
+  const [showShare,setShowShare]=useState(false);
+  const [copied,setCopied]=useState(false);
+  const [sheetLink,setSheetLink]=useState(()=>ld("sheet_link",""));
+
+  const shareUrl=()=>{const base=window.location.origin+window.location.pathname;
+    let u=base+"?roster="+encodeURIComponent(JSON.stringify(roster));
+    if(sheetLink)u+="&sheet="+encodeURIComponent(sheetLink);
+    return u};
+  const copyShare=()=>{navigator.clipboard.writeText(shareUrl()).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2000)}).catch(()=>{
+    // Fallback for older browsers
+    const ta=document.createElement("textarea");ta.value=shareUrl();document.body.appendChild(ta);ta.select();document.execCommand("copy");document.body.removeChild(ta);
+    setCopied(true);setTimeout(()=>setCopied(false),2000)})};
 
   useEffect(()=>{sv("games",games)},[games]);
   useEffect(()=>{sv("roster",roster)},[roster]);
+  useEffect(()=>{if(sheetLink)sv("sheet_link",sheetLink)},[sheetLink]);
 
   const curBat=gd?.lineup?.[batIdx%(gd?.lineup?.length||1)]||"";
 
@@ -427,7 +572,12 @@ function App(){
     const rs={};np.forEach(p=>{const n=(p.scoredPlayers||[]).length;if(n>0)rs[p.inning]=(rs[p.inning]||0)+n});setOurS(rs);setWaitOpp(false)};
 
   const saveG=()=>{const rec={...gd,plays,ourScoreByInning:ourS,oppScoreByInning:oppS,synced:false,id:Date.now()};
-    setGames(p=>[...p,rec]);setScr("setup");setPlays([]);setInn(1);setOuts(0);setBatIdx(0);
+    const updated=[...games,rec];setGames(updated);
+    // Check if this is the 2nd game today → show awards
+    const today=gd.date||new Date().toISOString().slice(0,10);
+    const todayCount=updated.filter(g=>g.date===today).length;
+    if(todayCount>=2){setAwardDate(today);setScr("awards")}else{setScr("setup")}
+    setPlays([]);setInn(1);setOuts(0);setBatIdx(0);
     setBases({first:null,second:null,third:null});setLastO(null);setGd(null);setOurS({});setOppS({});setWaitOpp(false)};
 
   const startG=d=>{setGd(d);setScr("scoring");setPlays([]);setInn(1);setOuts(0);setBatIdx(0);setBases({first:null,second:null,third:null});setOurS({});setOppS({});setWaitOpp(false)};
@@ -437,7 +587,8 @@ function App(){
   if(scr==="stats")return<StatsPage games={games} onBack={()=>setScr("setup")}/>;
   if(scr==="history")return<HistoryPage games={games} onBack={()=>setScr("setup")} onView={g=>{setViewG(g);setScr("detail")}} onDelete={id=>setGames(p=>p.filter(g=>(g.id||0)!==id))}/>;
   if(scr==="detail"&&viewG)return<GameDetail game={viewG} onBack={()=>setScr("history")}/>;
-  if(scr==="sync")return<SyncPage games={games} onBack={()=>setScr("setup")} onSynced={ids=>setGames(p=>p.map(g=>ids.includes(g.id)?{...g,synced:true}:g))}/>;
+  if(scr==="sync")return<SyncPage games={games} onBack={()=>setScr("setup")} onSynced={ids=>setGames(p=>p.map(g=>ids.includes(g.id)?{...g,synced:true}:g))} sheetLink={sheetLink} setSheetLink={setSheetLink}/>;
+  if(scr==="awards"&&awardDate)return<DailyAwards games={games} date={awardDate} onDone={()=>{setAwardDate(null);setScr("setup")}}/>;
   if(scr==="summary")return<Summary gd={gd} plays={plays} ourS={ourS} oppS={oppS} onSave={saveG}/>;
 
   if(scr==="scoring"&&gd){
@@ -466,7 +617,7 @@ function App(){
           <button onClick={()=>setPicking(!picking)} style={{padding:"4px 8px",borderRadius:6,border:"1px solid #c8a96e",background:"transparent",color:"#8d7b5a",fontSize:10,fontWeight:600,cursor:"pointer"}}>SWITCH</button>
           <button onClick={()=>setSkipConf(curBat)} style={{padding:"4px 8px",borderRadius:6,border:"1px solid #F44336",background:"transparent",color:"#F44336",fontSize:10,fontWeight:600,cursor:"pointer"}}>SKIP</button></div>
         <div style={{fontSize:11,color:"#8d7b5a"}}>#{(batIdx%gd.lineup.length)+1} of {gd.lineup.length}
-          <span onClick={()=>setAddLate(true)} style={{marginLeft:8,color:"#1B5E20",fontWeight:700,cursor:"pointer",textDecoration:"underline"}}>+ Add Player</span></div></div>
+          <span onClick={()=>setAddLate(true)} style={{marginLeft:8,color:"#1B5E20",fontWeight:700,cursor:"pointer",textDecoration:"underline"}}>Edit Lineup</span></div></div>
 
       {picking&&<div style={{background:"#fff",borderRadius:12,border:"1px solid #e0dcc8",padding:8,marginBottom:8,boxShadow:"0 4px 16px rgba(0,0,0,.1)"}}>
         {gd.lineup.map(n=><button key={n} onClick={()=>{const idx=gd.lineup.indexOf(n);if(idx>=0)setBatIdx(idx+Math.floor(batIdx/gd.lineup.length)*gd.lineup.length);setPicking(false)}}
@@ -509,23 +660,53 @@ function App(){
               setBases(nb);setGd({...gd,lineup:newLu});if(batIdx>=newLu.length)setBatIdx(batIdx%newLu.length);setSkipConf(null)}}
               style={{flex:1,padding:12,borderRadius:10,border:"none",background:"#F44336",color:"#fff",fontWeight:700,cursor:"pointer"}}>Remove</button></div></div></div>}
 
-      {addLate&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-        <div style={{background:"#faf8f2",borderRadius:16,padding:24,maxWidth:340,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,.3)"}}>
-          <div style={{fontSize:16,fontWeight:700,color:"#1B5E20",marginBottom:12}}>Add Late Player</div>
-          <div style={{fontSize:12,color:"#8d7b5a",marginBottom:12}}>They'll be added to the end of the batting order.</div>
-          {/* Show roster players not in lineup */}
-          {roster.filter(n=>!gd.lineup.includes(n)).length>0&&<div style={{marginBottom:12}}>
-            <div style={{fontSize:11,color:"#8d7b5a",fontWeight:600,marginBottom:6}}>FROM ROSTER</div>
+      {/* Mid-game lineup manager */}
+      {addLate&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+        <div style={{background:"#faf8f2",borderRadius:16,padding:20,maxWidth:380,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,.3)",maxHeight:"90vh",overflowY:"auto"}}>
+          <div style={{fontSize:16,fontWeight:700,color:"#1B5E20",marginBottom:4}}>Edit Lineup</div>
+          <div style={{fontSize:11,color:"#8d7b5a",marginBottom:12}}>Drag to reorder • × to remove • add from roster or type a new name</div>
+
+          {/* Draggable lineup */}
+          {gd.lineup.map((n,i)=>(
+            <div key={n} draggable
+              onDragStart={()=>setDragI(i)} onDragOver={e=>e.preventDefault()}
+              onDrop={()=>{if(dragI!==null&&dragI!==i){const a=[...gd.lineup];const[it]=a.splice(dragI,1);a.splice(i,0,it);setGd({...gd,lineup:a});setDragI(null)}}}
+              onDragEnd={()=>setDragI(null)}
+              onTouchStart={()=>setDragI(i)}
+              style={{display:"flex",alignItems:"center",gap:8,padding:"8px 10px",
+                background:dragI===i?"#C8E6C9":(i%2===0?"#fff":"#f8f6f0"),
+                borderRadius:8,marginBottom:3,cursor:"grab",border:"1px solid #e8e4d4",transition:"background .2s"}}>
+              <span style={{fontSize:10,color:"#8d7b5a",cursor:"grab",userSelect:"none"}}>☰</span>
+              <span style={{fontSize:13,fontWeight:800,color:"#1B5E20",fontFamily:FM,width:22,textAlign:"center"}}>{i+1}</span>
+              <span style={{fontSize:13,fontWeight:600,color:"#333",flex:1}}>{n}</span>
+              {n===curBat&&<span style={{fontSize:9,color:"#FF9800",fontWeight:700}}>AT BAT</span>}
+              <button onClick={()=>{
+                const newLu=gd.lineup.filter(x=>x!==n);
+                if(!newLu.length)return;
+                const nb={...bases};if(nb.first===n)nb.first=null;if(nb.second===n)nb.second=null;if(nb.third===n)nb.third=null;
+                setBases(nb);setGd({...gd,lineup:newLu});
+                if(batIdx>=newLu.length)setBatIdx(batIdx%newLu.length);
+              }} style={{background:"none",border:"none",color:"#F44336",cursor:"pointer",fontSize:16,lineHeight:1,padding:"0 2px"}}>×</button>
+            </div>
+          ))}
+
+          {/* Roster players not in lineup */}
+          {roster.filter(n=>!gd.lineup.includes(n)).length>0&&<div style={{marginTop:12}}>
+            <div style={{fontSize:11,color:"#8d7b5a",fontWeight:600,marginBottom:6}}>ADD FROM ROSTER</div>
             <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
               {roster.filter(n=>!gd.lineup.includes(n)).map(n=>
-                <button key={n} onClick={()=>{addLatePlayer(n);setAddLate(false);setLateP("")}} style={{padding:"8px 14px",borderRadius:8,border:"1px solid #c8a96e",background:"transparent",color:"#5a4a2a",fontSize:12,fontWeight:600,cursor:"pointer"}}>{n}</button>)}</div></div>}
-          <div style={{fontSize:11,color:"#8d7b5a",fontWeight:600,marginBottom:6}}>OR ADD NEW</div>
-          <div style={{display:"flex",gap:8}}>
-            <input value={lateP} onChange={e=>setLateP(e.target.value)} placeholder="Player name" style={{flex:1,padding:"8px 12px",borderRadius:8,border:"1px solid #e0dcc8",fontSize:13,background:"#fff",outline:"none"}}
-              onKeyDown={e=>{if(e.key==="Enter"&&lateP.trim()){addLatePlayer(lateP.trim());setAddLate(false);setLateP("")}}}/>
-            <button onClick={()=>{if(lateP.trim()){addLatePlayer(lateP.trim());setAddLate(false);setLateP("")}}}
-              style={{padding:"8px 14px",borderRadius:8,border:"none",background:"#1B5E20",color:"#FFD600",fontWeight:700,cursor:"pointer"}}>ADD</button></div>
-          <button onClick={()=>{setAddLate(false);setLateP("")}} style={{width:"100%",padding:10,borderRadius:8,border:"2px solid #c8a96e",background:"transparent",color:"#8d7b5a",fontWeight:700,cursor:"pointer",marginTop:10}}>Cancel</button>
+                <button key={n} onClick={()=>{addLatePlayer(n)}} style={{padding:"7px 12px",borderRadius:8,border:"1px solid #c8a96e",background:"transparent",color:"#5a4a2a",fontSize:12,fontWeight:600,cursor:"pointer"}}>{n}</button>)}</div></div>}
+
+          {/* Add brand new player */}
+          <div style={{display:"flex",gap:8,marginTop:12}}>
+            <input value={lateP} onChange={e=>setLateP(e.target.value)} placeholder="New player name"
+              style={{flex:1,padding:"8px 12px",borderRadius:8,border:"1px solid #e0dcc8",fontSize:13,background:"#fff",outline:"none"}}
+              onKeyDown={e=>{if(e.key==="Enter"&&lateP.trim()){addLatePlayer(lateP.trim());setLateP("")}}}/>
+            <button onClick={()=>{if(lateP.trim()){addLatePlayer(lateP.trim());setLateP("")}}}
+              style={{padding:"8px 14px",borderRadius:8,border:"none",background:"#1B5E20",color:"#FFD600",fontWeight:700,cursor:"pointer"}}>+</button>
+          </div>
+
+          <button onClick={()=>{setAddLate(false);setLateP("");setDragI(null)}} style={{width:"100%",padding:12,borderRadius:10,border:"none",background:"#1B5E20",color:"#FFD600",fontWeight:800,fontSize:14,cursor:"pointer",marginTop:14}}>DONE</button>
         </div></div>}
     </div>);}
 
@@ -536,10 +717,13 @@ function App(){
         <div style={{fontSize:14,letterSpacing:3,color:"#8d7b5a",fontWeight:600}}>SLO-PITCH</div>
         <div style={{fontSize:32,fontWeight:900,color:"#1B5E20",letterSpacing:2,fontFamily:FM,lineHeight:1.1}}>{TEAM}</div>
         <div style={{fontSize:13,color:"#8d7b5a",marginTop:4}}>STAT TRACKER</div></div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:16}}>
-        <button onClick={()=>setScr("stats")} style={{padding:12,borderRadius:10,border:"2px solid #1B5E20",background:"transparent",color:"#1B5E20",fontWeight:700,fontSize:11,cursor:"pointer"}}>TEAM STATS</button>
-        <button onClick={()=>setScr("history")} style={{padding:12,borderRadius:10,border:"2px solid #1B5E20",background:"transparent",color:"#1B5E20",fontWeight:700,fontSize:11,cursor:"pointer"}}>GAME LOG</button>
-        <button onClick={()=>setScr("sync")} style={{padding:12,borderRadius:10,border:"2px solid #1B5E20",background:"transparent",color:"#1B5E20",fontWeight:700,fontSize:11,cursor:"pointer"}}>SYNC</button></div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 1fr",gap:5,marginBottom:16}}>
+        <button onClick={()=>setScr("stats")} style={{padding:10,borderRadius:10,border:"2px solid #1B5E20",background:"transparent",color:"#1B5E20",fontWeight:700,fontSize:9,cursor:"pointer"}}>STATS</button>
+        <button onClick={()=>setScr("history")} style={{padding:10,borderRadius:10,border:"2px solid #1B5E20",background:"transparent",color:"#1B5E20",fontWeight:700,fontSize:9,cursor:"pointer"}}>GAMES</button>
+        <button onClick={()=>{if(sheetLink)window.open(sheetLink,"_blank");else setScr("sync")}} style={{padding:10,borderRadius:10,border:"2px solid #4CAF50",background:sheetLink?"#4CAF50":"transparent",color:sheetLink?"#fff":"#4CAF50",fontWeight:700,fontSize:9,cursor:"pointer"}}>SHEET</button>
+        <button onClick={()=>setScr("sync")} style={{padding:10,borderRadius:10,border:"2px solid #1B5E20",background:"transparent",color:"#1B5E20",fontWeight:700,fontSize:9,cursor:"pointer"}}>SYNC</button>
+        <button onClick={()=>setShowShare(true)} disabled={!roster.length} style={{padding:10,borderRadius:10,border:"2px solid #FF9800",background:"transparent",color:"#FF9800",fontWeight:700,fontSize:9,cursor:roster.length?"pointer":"default",opacity:roster.length?1:.4}}>SHARE</button>
+      </div>
       <div style={{background:"#faf8f2",borderRadius:16,padding:20,marginBottom:16,border:"1px solid #e0dcc8"}}>
         <div style={{fontSize:12,fontWeight:700,color:"#8d7b5a",marginBottom:12}}>GAME INFO</div>
         <div style={{display:"flex",gap:10,marginBottom:10}}>
@@ -593,6 +777,24 @@ function App(){
             <button onClick={()=>setRmConf(null)} style={{flex:1,padding:12,borderRadius:10,border:"2px solid #c8a96e",background:"transparent",color:"#8d7b5a",fontWeight:700,cursor:"pointer"}}>Cancel</button>
             <button onClick={()=>{setRoster(p=>p.filter(x=>x!==rmConf));setLineup(p=>p.filter(x=>x!==rmConf));setRmConf(null)}}
               style={{flex:1,padding:12,borderRadius:10,border:"none",background:"#F44336",color:"#fff",fontWeight:700,cursor:"pointer"}}>Remove</button></div></div></div>}
+      {showShare&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+        <div style={{background:"#faf8f2",borderRadius:16,padding:24,maxWidth:380,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,.3)"}}>
+          <div style={{fontSize:16,fontWeight:700,color:"#1B5E20",marginBottom:4}}>Share Roster</div>
+          <div style={{fontSize:12,color:"#8d7b5a",marginBottom:12}}>Send this link to your teammates. When they open it, your roster loads onto their device automatically.</div>
+          <div style={{background:"#fff",borderRadius:8,padding:10,border:"1px solid #e0dcc8",marginBottom:12,wordBreak:"break-all",fontSize:10,fontFamily:FM,color:"#555",maxHeight:80,overflowY:"auto"}}>
+            {shareUrl()}</div>
+          <div style={{fontSize:11,color:"#8d7b5a",marginBottom:12}}>
+            <span style={{fontWeight:700,color:"#1B5E20"}}>Roster ({roster.length}):</span> {roster.join(", ")}</div>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={()=>{setShowShare(false);setCopied(false)}} style={{flex:1,padding:12,borderRadius:10,border:"2px solid #c8a96e",background:"transparent",color:"#8d7b5a",fontWeight:700,cursor:"pointer"}}>Close</button>
+            <button onClick={copyShare} style={{flex:2,padding:12,borderRadius:10,border:"none",
+              background:copied?"#4CAF50":"#FF9800",color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer",transition:"background .3s"}}>
+              {copied?"✓ COPIED!":"COPY LINK"}</button>
+          </div>
+          {navigator.share&&<button onClick={()=>{navigator.share({title:TEAM+" Roster",text:"Join the "+TEAM+" roster on our stat tracker!",url:shareUrl()}).catch(()=>{})}}
+            style={{width:"100%",padding:12,borderRadius:10,border:"none",background:"#1B5E20",color:"#FFD600",fontWeight:800,fontSize:13,cursor:"pointer",marginTop:8}}>
+            SHARE VIA...</button>}
+        </div></div>}
     </div>);
 }
 ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
