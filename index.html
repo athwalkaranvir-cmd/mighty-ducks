@@ -94,10 +94,28 @@ function aggStats(games){
 const MIN_G=10;// Minimum games to qualify for rankings (40% of 24 game season)
 
 function StatsPage({games,onBack}){
-  const [tab,setTab]=useState("stats");const c=aggStats(games);
-  const pl=Object.entries(c).filter(([,s])=>s.AB>0||s.G>0).sort((a,b)=>(b[1].AB>0?b[1].H/b[1].AB:0)-(a[1].AB>0?a[1].H/a[1].AB:0));
-  const qualPl=pl.filter(([,s])=>s.G>=MIN_G);// Qualified for rankings
-  const unqPl=pl.filter(([,s])=>s.G<MIN_G&&s.G>0);
+  const [tab,setTab]=useState("stats");
+  const [cloud,setCloud]=useState(null);
+  const [loading,setLoading]=useState(false);
+  const [source,setSource]=useState("local");
+
+  // Try to fetch from Google Sheets on mount
+  useEffect(()=>{
+    const syncUrl=ld("sync_url","");
+    if(!syncUrl)return;
+    setLoading(true);
+    fetch(syncUrl+"?action=stats").then(r=>r.json()).then(d=>{
+      if(d.status==="ok"&&d.players&&Object.keys(d.players).length>0){
+        setCloud(d.players);setSource("cloud")}
+      setLoading(false)}).catch(()=>setLoading(false));
+  },[]);
+
+  // Use cloud data if available, otherwise local
+  const c = source==="cloud"&&cloud ? cloud : aggStats(games);
+  // Normalize cloud data (values come as numbers already)
+  const pl=Object.entries(c).filter(([,s])=>(s.AB||0)>0||(s.G||0)>0).sort((a,b)=>((b[1].AB||0)>0?(b[1].H||0)/(b[1].AB||0):0)-((a[1].AB||0)>0?(a[1].H||0)/(a[1].AB||0):0));
+  const qualPl=pl.filter(([,s])=>(s.G||0)>=MIN_G);
+  const unqPl=pl.filter(([,s])=>(s.G||0)<MIN_G&&(s.G||0)>0);
   const rc=[{l:"AVG",f:s=>s.AB>0?s.H/s.AB:0,fm:v=>v.toFixed(3)},{l:"SLG",f:s=>s.AB>0?(s["1B"]+s["2B"]*2+s["3B"]*3+s.HR*4)/s.AB:0,fm:v=>v.toFixed(3)},
     {l:"OBP",f:s=>(s.AB+s.BB+s.SF)>0?(s.H+s.BB)/(s.AB+s.BB+s.SF):0,fm:v=>v.toFixed(3)},
     {l:"H",f:s=>s.H},{l:"R",f:s=>s.R},{l:"RBI",f:s=>s.RBI},{l:"HR",f:s=>s.HR},{l:"2B",f:s=>s["2B"]},{l:"3B",f:s=>s["3B"]},
@@ -111,6 +129,13 @@ function StatsPage({games,onBack}){
     <div style={{display:"flex",gap:8,marginBottom:16}}>
       {["stats","rankings"].map(t=><button key={t} onClick={()=>setTab(t)} style={{flex:1,padding:10,borderRadius:10,border:"none",cursor:"pointer",
         background:tab===t?"#1B5E20":"#e8f5e9",color:tab===t?"#FFD600":"#1B5E20",fontWeight:700,fontSize:12}}>{t==="stats"?"FULL STATS":"RANKINGS"}</button>)}</div>
+    {loading&&<div style={{textAlign:"center",padding:12,color:"#8d7b5a",fontSize:12}}>Loading stats from Google Sheets...</div>}
+    {!loading&&cloud&&<div style={{display:"flex",justifyContent:"center",gap:8,marginBottom:12}}>
+      <button onClick={()=>setSource("cloud")} style={{padding:"4px 12px",borderRadius:6,border:"none",cursor:"pointer",fontSize:10,fontWeight:700,
+        background:source==="cloud"?"#4CAF50":"#e8f5e9",color:source==="cloud"?"#fff":"#4CAF50"}}>Google Sheets (Live)</button>
+      <button onClick={()=>setSource("local")} style={{padding:"4px 12px",borderRadius:6,border:"none",cursor:"pointer",fontSize:10,fontWeight:700,
+        background:source==="local"?"#1B5E20":"#e8f5e9",color:source==="local"?"#FFD600":"#1B5E20"}}>Local (This Device)</button>
+    </div>}
     {pl.length===0?<div style={{textAlign:"center",padding:40,color:"#b0a88a"}}>No games yet.</div>:
     tab==="stats"?<div style={{overflowX:"auto",borderRadius:12,border:"1px solid #e0dcc8"}}>
       <table style={{width:"100%",borderCollapse:"collapse",fontSize:10,fontFamily:FM,minWidth:650}}>
