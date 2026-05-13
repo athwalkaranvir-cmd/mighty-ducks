@@ -646,9 +646,12 @@ function App(){
   // Check if this is a read-only stats view link
   const params=new URLSearchParams(window.location.search);
   const viewMode=params.get("view");
-  const syncParam=params.get("sync")||ld("sync_url","");
-  if(viewMode==="stats"&&syncParam){
-    return <StatsViewer syncUrl={syncParam}/>;
+  // Save sync URL if passed in any link
+  const syncFromUrl=params.get("sync");
+  if(syncFromUrl){sv("sync_url",syncFromUrl);window.history.replaceState({},"",window.location.pathname+(viewMode?"?view="+viewMode:""))}
+  const syncUrl=syncFromUrl||ld("sync_url","");
+  if(viewMode==="stats"&&syncUrl){
+    return <StatsViewer syncUrl={syncUrl}/>;
   }
 
   const [scr,setScr]=useState("setup");const [gd,setGd]=useState(null);const [plays,setPlays]=useState([]);
@@ -670,6 +673,9 @@ function App(){
           // Also grab sheet link if included
           const sh=params.get("sheet");
           if(sh){sv("sheet_link",sh)}
+          // Also grab sync URL if included
+          const sy=params.get("sync");
+          if(sy){sv("sync_url",sy)}
           // Clean URL without reloading
           window.history.replaceState({},"",window.location.pathname);
           return merged}}}catch(e){}
@@ -688,6 +694,8 @@ function App(){
   const shareUrl=()=>{const base=window.location.origin+window.location.pathname;
     let u=base+"?roster="+encodeURIComponent(JSON.stringify(roster));
     if(sheetLink)u+="&sheet="+encodeURIComponent(sheetLink);
+    const syncU=ld("sync_url","");
+    if(syncU)u+="&sync="+encodeURIComponent(syncU);
     return u};
   const copyShare=()=>{navigator.clipboard.writeText(shareUrl()).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2000)}).catch(()=>{
     // Fallback for older browsers
@@ -966,9 +974,10 @@ function App(){
               <div style={{fontSize:11,color:"#8d7b5a",marginBottom:8}}>Share this link in the group chat. Anyone can view team stats and game history — no editing, no setup needed.</div>
             </div>
             <div style={{background:"#fff",borderRadius:8,padding:8,border:"1px solid #e0dcc8",marginBottom:8,wordBreak:"break-all",fontSize:9,fontFamily:FM,color:"#555",maxHeight:60,overflowY:"auto"}}>
-              {window.location.origin+window.location.pathname+"?view=stats&sync="+encodeURIComponent(ld("sync_url",""))}</div>
+              {window.location.origin+window.location.pathname+"?view=stats"}</div>
+            <div style={{fontSize:10,color:"#8d7b5a",marginBottom:8,fontStyle:"italic"}}>First time viewers need the roster link above (it saves the connection). After that, this short link works on its own.</div>
             <div style={{display:"flex",gap:8,marginBottom:8}}>
-              <button onClick={()=>{const u=window.location.origin+window.location.pathname+"?view=stats&sync="+encodeURIComponent(ld("sync_url",""));
+              <button onClick={()=>{const u=window.location.origin+window.location.pathname+"?view=stats";
                 navigator.clipboard.writeText(u).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2000)}).catch(()=>{
                 const ta=document.createElement("textarea");ta.value=u;document.body.appendChild(ta);ta.select();document.execCommand("copy");document.body.removeChild(ta);
                 setCopied(true);setTimeout(()=>setCopied(false),2000)})}}
