@@ -208,9 +208,10 @@ function StatsViewer({syncUrl}){
   const rc=[{l:"Batting Avg",f:s=>(s.AB||0)>0?(s.H||0)/(s.AB||0):0,fm:v=>v.toFixed(3)},{l:"Slugging",f:s=>(s.AB||0)>0?((s["1B"]||0)+(s["2B"]||0)*2+(s["3B"]||0)*3+(s.HR||0)*4)/(s.AB||0):0,fm:v=>v.toFixed(3)},
     {l:"On-Base %",f:s=>((s.AB||0)+(s.BB||0)+(s.SF||0))>0?((s.H||0)+(s.BB||0))/((s.AB||0)+(s.BB||0)+(s.SF||0)):0,fm:v=>v.toFixed(3)},
     {l:"Hits",f:s=>s.H||0},{l:"Runs",f:s=>s.R||0},{l:"RBI",f:s=>s.RBI||0},{l:"Home Runs",f:s=>s.HR||0},{l:"Doubles",f:s=>s["2B"]||0},{l:"Triples",f:s=>s["3B"]||0},
-    {l:"Walks",f:s=>s.BB||0}];
+    {l:"Walks",f:s=>s.BB||0},{l:"Ground Outs",f:s=>s.GO||0},{l:"Strikeouts",f:s=>s.SO||0},{l:"Foul Outs",f:s=>s.FO||0},{l:"Fly Outs",f:s=>s.FLO||0},
+    {l:"Sac Flies",f:s=>s.SF||0},{l:"Fielder's Choice",f:s=>s.FC||0}];
   const gms=data.games||[];
-  const hd=["Player","G","AB","R","H","1B","2B","3B","HR","RBI","BB","AVG","SLG","OBP"];
+  const hd=["Player","Games","At Bats","Runs","Hits","Singles","Doubles","Triples","Home Runs","RBI","Walks","Ground Outs","Strikeouts","Foul Outs","Fly Outs","Sac Flies","FC","AVG","SLG","OBP"];
 
   return(<div style={{maxWidth:600,margin:"0 auto",padding:20}}>
     <div style={{textAlign:"center",marginBottom:20}}>
@@ -226,15 +227,15 @@ function StatsViewer({syncUrl}){
 
     {tab==="stats"&&(pl.length===0?<div style={{textAlign:"center",padding:40,color:"#b0a88a"}}>No stats yet.</div>:
       <div style={{overflowX:"auto",borderRadius:12,border:"1px solid #e0dcc8"}}>
-        <table style={{width:"100%",borderCollapse:"collapse",fontSize:10,fontFamily:FM,minWidth:500}}>
-          <thead><tr style={{background:"#1B5E20"}}>{hd.map(h=><th key={h} style={{padding:"6px 4px",color:"#FFD600",fontWeight:700,fontSize:9,whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:10,fontFamily:FM,minWidth:700}}>
+          <thead><tr style={{background:"#1B5E20"}}>{hd.map(h=><th key={h} style={{padding:"6px 3px",color:"#FFD600",fontWeight:700,fontSize:8,whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
           <tbody>{pl.map(([n,s],i)=>{const avg=(s.AB||0)>0?((s.H||0)/(s.AB||0)).toFixed(3):"-";
             const tb=(s["1B"]||0)+(s["2B"]||0)*2+(s["3B"]||0)*3+(s.HR||0)*4;
             const slg=(s.AB||0)>0?(tb/(s.AB||0)).toFixed(3):"-";
             const obp=((s.AB||0)+(s.BB||0)+(s.SF||0))>0?(((s.H||0)+(s.BB||0))/((s.AB||0)+(s.BB||0)+(s.SF||0))).toFixed(3):"-";
             return(<tr key={n} style={{background:i%2===0?"#faf8f2":"#fff"}}>
               <td style={{padding:"5px 6px",fontWeight:600,color:"#1B5E20",whiteSpace:"nowrap",fontSize:11}}>{n}</td>
-              {[s.G||0,s.AB||0,s.R||0,s.H||0,s["1B"]||0,s["2B"]||0,s["3B"]||0,s.HR||0,s.RBI||0,s.BB||0].map((v,j)=>
+              {[s.G||0,s.AB||0,s.R||0,s.H||0,s["1B"]||0,s["2B"]||0,s["3B"]||0,s.HR||0,s.RBI||0,s.BB||0,s.GO||0,s.SO||0,s.FO||0,s.FLO||0,s.SF||0,s.FC||0].map((v,j)=>
                 <td key={j} style={{padding:"4px 3px",textAlign:"center",color:"#333"}}>{v}</td>)}
               <td style={{padding:"4px 3px",textAlign:"center",fontWeight:700,color:"#1565C0"}}>{avg}</td>
               <td style={{padding:"4px 3px",textAlign:"center",fontWeight:700,color:"#9C27B0"}}>{slg}</td>
