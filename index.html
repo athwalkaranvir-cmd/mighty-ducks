@@ -162,11 +162,11 @@ function StatsPage({games,onBack}){
       {qualPl.length===0?<div style={{textAlign:"center",padding:30,color:"#b0a88a",fontSize:13}}>No players have reached {MIN_G} games yet.</div>:
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
         {rc.map(cat=>{const sorted=[...qualPl].sort((a,b)=>cat.f(b[1])-cat.f(a[1]));
-          const top5=sorted.slice(0,5).filter(([,s])=>cat.f(s)>0);if(!top5.length)return null;
+          const top10=sorted.slice(0,10).filter(([,s])=>cat.f(s)>0);if(!top10.length)return null;
           return(<div key={cat.l} style={{background:"#faf8f2",borderRadius:12,padding:12,border:"1px solid #e0dcc8"}}>
             <div style={{fontSize:11,fontWeight:800,color:"#1B5E20",letterSpacing:1,marginBottom:8,textAlign:"center"}}>{cat.l}</div>
-            {top5.map(([n,s],i)=>{const v=cat.f(s);const d=cat.fm?cat.fm(v):String(v);
-              return(<div key={n} style={{display:"flex",alignItems:"center",gap:6,padding:"3px 0",borderBottom:i<top5.length-1?"1px solid #e8e4d4":"none"}}>
+            {top10.map(([n,s],i)=>{const v=cat.f(s);const d=cat.fm?cat.fm(v):String(v);
+              return(<div key={n} style={{display:"flex",alignItems:"center",gap:6,padding:"3px 0",borderBottom:i<top10.length-1?"1px solid #e8e4d4":"none"}}>
                 <span style={{fontSize:12,fontWeight:800,fontFamily:FM,width:18,textAlign:"center",
                   color:i===0?"#FFD600":i===1?"#bdbdbd":i===2?"#A1887F":"#8d7b5a"}}>{i+1}</span>
                 <span style={{fontSize:11,fontWeight:600,color:"#1B5E20",flex:1}}>{n}</span>
@@ -247,11 +247,11 @@ function StatsViewer({syncUrl}){
       {qualPl.length===0?<div style={{textAlign:"center",padding:30,color:"#b0a88a",fontSize:13}}>No players qualified yet.</div>:
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
         {rc.map(cat=>{const sorted=[...qualPl].sort((a,b)=>cat.f(b[1])-cat.f(a[1]));
-          const top5=sorted.slice(0,5).filter(([,s])=>cat.f(s)>0);if(!top5.length)return null;
+          const top10=sorted.slice(0,10).filter(([,s])=>cat.f(s)>0);if(!top10.length)return null;
           return(<div key={cat.l} style={{background:"#faf8f2",borderRadius:12,padding:12,border:"1px solid #e0dcc8"}}>
             <div style={{fontSize:11,fontWeight:800,color:"#1B5E20",letterSpacing:1,marginBottom:8,textAlign:"center"}}>{cat.l}</div>
-            {top5.map(([n,s],i)=>{const v=cat.f(s);const d=cat.fm?cat.fm(v):String(v);
-              return(<div key={n} style={{display:"flex",alignItems:"center",gap:6,padding:"3px 0",borderBottom:i<top5.length-1?"1px solid #e8e4d4":"none"}}>
+            {top10.map(([n,s],i)=>{const v=cat.f(s);const d=cat.fm?cat.fm(v):String(v);
+              return(<div key={n} style={{display:"flex",alignItems:"center",gap:6,padding:"3px 0",borderBottom:i<top10.length-1?"1px solid #e8e4d4":"none"}}>
                 <span style={{fontSize:12,fontWeight:800,fontFamily:FM,width:18,textAlign:"center",
                   color:i===0?"#FFD600":i===1?"#bdbdbd":i===2?"#A1887F":"#8d7b5a"}}>{i+1}</span>
                 <span style={{fontSize:11,fontWeight:600,color:"#1B5E20",flex:1}}>{n}</span>
