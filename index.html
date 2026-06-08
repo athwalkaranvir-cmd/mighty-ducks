@@ -21,7 +21,7 @@ button{font-family:inherit;touch-action:manipulation}input{font-family:inherit}
 <body>
 <div id="root"></div>
 <script type="text/babel" data-type="module">
-const {useState,useEffect} = React;
+const {useState,useEffect,useRef} = React;
 const TEAM="MIGHTY DUCKS";
 const HITS=["1B","2B","3B","HR"];
 const OUTS=["GO","SO","FO","FLO"];
@@ -655,11 +655,13 @@ function App(){
     return <StatsViewer syncUrl={syncUrl}/>;
   }
 
-  const [scr,setScr]=useState("setup");const [gd,setGd]=useState(null);const [plays,setPlays]=useState([]);
-  const [inn,setInn]=useState(1);const [outs,setOuts]=useState(0);const [batIdx,setBatIdx]=useState(0);
-  const [bases,setBases]=useState({first:null,second:null,third:null});const [lastO,setLastO]=useState(null);
+  const savedActive=ld("active_game",null);
+  const [scr,setScr]=useState(savedActive?(savedActive.scr||"scoring"):"setup");const [gd,setGd]=useState(savedActive?savedActive.gd:null);const [plays,setPlays]=useState(savedActive?savedActive.plays:[]);
+  const [inn,setInn]=useState(savedActive?savedActive.inn:1);const [outs,setOuts]=useState(savedActive?savedActive.outs:0);const [batIdx,setBatIdx]=useState(savedActive?savedActive.batIdx:0);
+  const [bases,setBases]=useState(savedActive?savedActive.bases:{first:null,second:null,third:null});const [lastO,setLastO]=useState(savedActive?savedActive.lastO:null);
+  const [hist,setHist]=useState(savedActive&&savedActive.hist?savedActive.hist:[]);
   const [modal,setModal]=useState(null);const [games,setGames]=useState(()=>ld("games",[]));
-  const [picking,setPicking]=useState(false);const [ourS,setOurS]=useState({});const [oppS,setOppS]=useState({});
+  const [picking,setPicking]=useState(false);const [ourS,setOurS]=useState(savedActive?savedActive.ourS:{});const [oppS,setOppS]=useState(savedActive?savedActive.oppS:{});
   const [oppAsk,setOppAsk]=useState(null);const [viewG,setViewG]=useState(null);
   const [roster,setRoster]=useState(()=>{
     // Check URL for shared roster first
@@ -685,7 +687,7 @@ function App(){
   const [opp,setOpp]=useState("");const [gNum,setGNum]=useState("");const [gDate,setGDate]=useState(new Date().toISOString().slice(0,10));
   const [field,setField]=useState("");const [isHome,setIsHome]=useState(true);const [newP,setNewP]=useState("");
   const [dragI,setDragI]=useState(null);const [rmConf,setRmConf]=useState(null);
-  const [skipConf,setSkipConf]=useState(null);const [waitOpp,setWaitOpp]=useState(false);
+  const [skipConf,setSkipConf]=useState(null);const [waitOpp,setWaitOpp]=useState(savedActive?!!savedActive.waitOpp:false);
   const [addLate,setAddLate]=useState(false);const [lateP,setLateP]=useState("");
   const [awardDate,setAwardDate]=useState(null);
   const [showShare,setShowShare]=useState(false);
@@ -698,6 +700,8 @@ function App(){
     const syncU=ld("sync_url","");
     if(syncU)u+="&sync="+encodeURIComponent(syncU);
     return u};
+  // View-only stats link with the sync URL baked in, so teammates need no prior setup
+  const statsShareUrl=()=>window.location.origin+window.location.pathname+"?view=stats&sync="+encodeURIComponent(ld("sync_url",""));
   const copyShare=()=>{navigator.clipboard.writeText(shareUrl()).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2000)}).catch(()=>{
     // Fallback for older browsers
     const ta=document.createElement("textarea");ta.value=shareUrl();document.body.appendChild(ta);ta.select();document.execCommand("copy");document.body.removeChild(ta);
@@ -705,11 +709,52 @@ function App(){
 
   useEffect(()=>{sv("games",games)},[games]);
   useEffect(()=>{sv("roster",roster)},[roster]);
+  // ── Cloud roster sync ──
+  // The Google Sheet is the source of truth. Pull it on load (so a scorer you
+  // send the link to already has everyone), and push on every add/delete.
+  const rosterReady=useRef(false);
+  const lastRosterSynced=useRef(null);
+  const pushRoster=(list)=>{
+    const syncUrl=ld("sync_url","");
+    if(!syncUrl)return;
+    const j=JSON.stringify(list);
+    if(lastRosterSynced.current===j)return; // nothing changed
+    lastRosterSynced.current=j;
+    fetch(syncUrl,{method:"POST",headers:{"Content-Type":"text/plain"},
+      body:JSON.stringify({action:"save_roster",roster:list})}).catch(()=>{});
+  };
+  useEffect(()=>{
+    const syncUrl=ld("sync_url","");
+    if(!syncUrl){rosterReady.current=true;return;}
+    fetch(syncUrl+"?action=roster").then(r=>r.json()).then(d=>{
+      if(d&&d.status==="ok"){
+        if(d.rosterInitialized){
+          const cloud=Array.isArray(d.roster)?d.roster:[];
+          lastRosterSynced.current=JSON.stringify(cloud);
+          setRoster(cloud); // cloud wins, so deletions propagate
+        }else{
+          pushRoster(roster); // sheet not set up yet — seed it from this device
+        }
+      }
+    }).catch(()=>{}).finally(()=>{rosterReady.current=true});
+  },[]);
+  useEffect(()=>{
+    if(!rosterReady.current)return; // don't echo the initial cloud pull back up
+    pushRoster(roster);
+  },[roster]);
   useEffect(()=>{if(sheetLink)sv("sheet_link",sheetLink)},[sheetLink]);
+  // Continuously snapshot an in-progress game so an idle reload/crash can resume it
+  useEffect(()=>{
+    if((scr==="scoring"||scr==="summary")&&gd){
+      sv("active_game",{scr,gd,plays,inn,outs,batIdx,bases,lastO,ourS,oppS,waitOpp,hist});
+    }
+  },[scr,gd,plays,inn,outs,batIdx,bases,lastO,ourS,oppS,waitOpp,hist]);
+  const clearActive=()=>{try{localStorage.removeItem("md_active_game")}catch(e){}};
 
   const curBat=gd?.lineup?.[batIdx%(gd?.lineup?.length||1)]||"";
 
   const doPlay=(rbi,batScored,scored,fcInfo,adv,extraOuts)=>{
+    setHist(h=>[...h,{plays,inn,outs,batIdx,bases,lastO,ourS,oppS,waitOpp}]);
     const{batter,outcome}=modal;const nb={first:null,second:null,third:null};
     const isHR=outcome==="HR";
     if(adv&&!isHR){Object.entries(adv).forEach(([name,dest])=>{
@@ -739,16 +784,12 @@ function App(){
       else setOuts(no)}
     setBatIdx(p=>p+1)};
 
-  const doOpp=sc=>{setOppS(p=>({...p,[oppAsk]:(p[oppAsk]||0)+sc}));setOppAsk(null);setWaitOpp(false);setOuts(0);setInn(p=>p+1);setBases({first:null,second:null,third:null});setLastO(null)};
+  const doOpp=sc=>{setHist(h=>[...h,{plays,inn,outs,batIdx,bases,lastO,ourS,oppS,waitOpp}]);setOppS(p=>({...p,[oppAsk]:(p[oppAsk]||0)+sc}));setOppAsk(null);setWaitOpp(false);setOuts(0);setInn(p=>p+1);setBases({first:null,second:null,third:null});setLastO(null)};
 
-  const undo=()=>{if(!plays.length)return;const np=plays.slice(0,-1);setPlays(np);setBatIdx(p=>Math.max(0,p-1));
-    setBases({first:null,second:null,third:null});setLastO(np.length?np[np.length-1].outcome:null);
-    const li=np.length?np[np.length-1].inning:inn;
-    let recalcOuts=0;np.filter(p=>p.inning===li).forEach(p=>{
-      if(OUTS.includes(p.outcome)||p.outcome==="SF"||p.outcome==="FC")recalcOuts++;
-      recalcOuts+=(p.extraOuts||0)});
-    setOuts(recalcOuts);
-    const rs={};np.forEach(p=>{const n=(p.scoredPlayers||[]).length;if(n>0)rs[p.inning]=(rs[p.inning]||0)+n});setOurS(rs);setWaitOpp(false)};
+  const undo=()=>{if(!hist.length)return;const prev=hist[hist.length-1];
+    setPlays(prev.plays);setInn(prev.inn);setOuts(prev.outs);setBatIdx(prev.batIdx);
+    setBases(prev.bases);setLastO(prev.lastO);setOurS(prev.ourS);setOppS(prev.oppS);setWaitOpp(!!prev.waitOpp);
+    setHist(h=>h.slice(0,-1))};
 
   const saveG=()=>{const rec={...gd,plays,ourScoreByInning:ourS,oppScoreByInning:oppS,synced:false,id:Date.now()};
     const updated=[...games,rec];setGames(updated);
@@ -756,10 +797,10 @@ function App(){
     const today=gd.date||new Date().toISOString().slice(0,10);
     const todayCount=updated.filter(g=>g.date===today).length;
     if(todayCount>=2){setAwardDate(today);setScr("awards")}else{setScr("setup")}
-    setPlays([]);setInn(1);setOuts(0);setBatIdx(0);
+    setPlays([]);setInn(1);setOuts(0);setBatIdx(0);setHist([]);clearActive();
     setBases({first:null,second:null,third:null});setLastO(null);setGd(null);setOurS({});setOppS({});setWaitOpp(false)};
 
-  const startG=d=>{setGd(d);setScr("scoring");setPlays([]);setInn(1);setOuts(0);setBatIdx(0);setBases({first:null,second:null,third:null});setOurS({});setOppS({});setWaitOpp(false)};
+  const startG=d=>{setGd(d);setScr("scoring");setPlays([]);setInn(1);setOuts(0);setBatIdx(0);setHist([]);setLastO(null);setBases({first:null,second:null,third:null});setOurS({});setOppS({});setWaitOpp(false)};
   const addP=n=>{if(n&&!roster.includes(n)){setRoster(p=>[...p,n]);setLineup(p=>[...p,n])}};
   const addLatePlayer=n=>{if(n&&gd){const newLu=[...gd.lineup,n];setGd({...gd,lineup:newLu});if(!roster.includes(n))setRoster(p=>[...p,n])}};
 
@@ -822,7 +863,7 @@ function App(){
         <button onClick={()=>setOppAsk(inn)} style={{padding:"12px 24px",borderRadius:10,border:"none",background:"#FF9800",color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer"}}>THEIR INNING IS OVER</button>
       </div>}
 
-      {plays.length>0&&<div style={{textAlign:"center",marginTop:12}}>
+      {hist.length>0&&<div style={{textAlign:"center",marginTop:12}}>
         <button onClick={undo} style={{padding:"6px 16px",borderRadius:8,border:"1px solid #F44336",background:"transparent",color:"#F44336",fontSize:11,fontWeight:700,cursor:"pointer"}}>UNDO LAST</button></div>}
 
       {modal&&<OutModal batter={modal.batter} outcome={modal.outcome} bases={bases} onOk={doPlay} onNo={()=>setModal(null)}/>}
@@ -943,11 +984,24 @@ function App(){
           <input value={newP} onChange={e=>setNewP(e.target.value)} placeholder="Add new player" style={{flex:1,padding:"8px 12px",borderRadius:8,border:"1px solid #e0dcc8",fontSize:13,background:"#fff",outline:"none"}}
             onKeyDown={e=>{if(e.key==="Enter"&&newP.trim()){addP(newP.trim());setNewP("")}}}/>
           <button onClick={()=>{if(newP.trim()){addP(newP.trim());setNewP("")}}} style={{padding:"8px 16px",borderRadius:8,border:"none",background:"#1B5E20",color:"#FFD600",fontWeight:700,fontSize:13,cursor:"pointer"}}>+</button></div></div>
-      <button onClick={()=>{if(lineup.length<1)return;startG({lineup,opponent:opp,gameNum:gNum,roster,date:gDate,field,isHome})}}
-        disabled={lineup.length<1} style={{width:"100%",padding:18,borderRadius:14,border:"none",
-          background:lineup.length<1?"#ccc":"#1B5E20",color:"#FFD600",fontWeight:900,fontSize:18,
-          cursor:lineup.length<1?"default":"pointer",letterSpacing:2,fontFamily:FM,
-          boxShadow:lineup.length<1?"none":"0 6px 24px rgba(27,94,32,.3)"}}>PLAY BALL</button>
+      {(()=>{
+        const miss=[];
+        if(!opp.trim())miss.push("opponent name");
+        if(!field.trim())miss.push("diamond/field");
+        if(!String(gNum).trim())miss.push("game #");
+        if(!gDate)miss.push("date");
+        if(lineup.length<1)miss.push("at least one batter");
+        const canStart=miss.length===0;
+        return(<React.Fragment>
+          {!canStart&&<div style={{background:"#FFF3E0",border:"2px solid #FFB74D",borderRadius:10,padding:"10px 12px",marginBottom:10,fontSize:12,color:"#E65100",fontWeight:600,textAlign:"center"}}>
+            Still needed: {miss.join(" • ")}</div>}
+          <button onClick={()=>{if(!canStart)return;startG({lineup,opponent:opp,gameNum:gNum,roster,date:gDate,field,isHome})}}
+            disabled={!canStart} style={{width:"100%",padding:18,borderRadius:14,border:"none",
+              background:!canStart?"#ccc":"#1B5E20",color:"#FFD600",fontWeight:900,fontSize:18,
+              cursor:!canStart?"default":"pointer",letterSpacing:2,fontFamily:FM,
+              boxShadow:!canStart?"none":"0 6px 24px rgba(27,94,32,.3)"}}>PLAY BALL</button>
+        </React.Fragment>);
+      })()}
       {rmConf&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
         <div style={{background:"#faf8f2",borderRadius:16,padding:24,maxWidth:320,width:"100%",textAlign:"center",boxShadow:"0 20px 60px rgba(0,0,0,.3)"}}>
           <div style={{fontSize:14,fontWeight:600,color:"#333",marginBottom:20}}>Remove {rmConf} from roster?</div>
@@ -975,10 +1029,12 @@ function App(){
               <div style={{fontSize:11,color:"#8d7b5a",marginBottom:8}}>Share this link in the group chat. Anyone can view team stats and game history — no editing, no setup needed.</div>
             </div>
             <div style={{background:"#fff",borderRadius:8,padding:8,border:"1px solid #e0dcc8",marginBottom:8,wordBreak:"break-all",fontSize:9,fontFamily:FM,color:"#555",maxHeight:60,overflowY:"auto"}}>
-              {window.location.origin+window.location.pathname+"?view=stats"}</div>
-            <div style={{fontSize:10,color:"#8d7b5a",marginBottom:8,fontStyle:"italic"}}>First time viewers need the roster link above (it saves the connection). After that, this short link works on its own.</div>
+              {statsShareUrl()}</div>
+            {(window.location.protocol!=="http:"&&window.location.protocol!=="https:")&&<div style={{background:"#FFEBEE",border:"1px solid #EF9A9A",borderRadius:8,padding:8,marginBottom:8,fontSize:10,color:"#C62828",fontWeight:600}}>
+              This app is open from a file, not a web address — teammates can't open this link. Host the HTML online (e.g. GitHub Pages or Netlify) and share that address.</div>}
+            <div style={{fontSize:10,color:"#8d7b5a",marginBottom:8,fontStyle:"italic"}}>This link is self-contained — teammates can open it directly with no setup. Make sure you've synced your games first (SYNC button) so there's data to show.</div>
             <div style={{display:"flex",gap:8,marginBottom:8}}>
-              <button onClick={()=>{const u=window.location.origin+window.location.pathname+"?view=stats";
+              <button onClick={()=>{const u=statsShareUrl();
                 navigator.clipboard.writeText(u).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2000)}).catch(()=>{
                 const ta=document.createElement("textarea");ta.value=u;document.body.appendChild(ta);ta.select();document.execCommand("copy");document.body.removeChild(ta);
                 setCopied(true);setTimeout(()=>setCopied(false),2000)})}}
