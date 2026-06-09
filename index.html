@@ -540,8 +540,14 @@ function SyncPage({games,onBack,onSynced,sheetLink,setSheetLink}){
     if(!withPlays.length){setStatus("No play-by-play to upload yet.");return}
     setBusy(true);setStatus("Uploading play-by-play...");
     try{const r=await fetch(url.trim(),{method:"POST",headers:{"Content-Type":"text/plain"},
-      body:JSON.stringify({action:"sync_plays",games:withPlays.map(g=>({id:g.id,plays:g.plays}))})});
-      const d=await r.json();if(d.status==="ok")setStatus("✓ Play-by-play uploaded for "+(d.updated||0)+" game(s)! Teammates can now see it.");
+      body:JSON.stringify({action:"sync_plays",games:withPlays.map(g=>({id:g.id,date:g.date,opponent:g.opponent,gameNum:g.gameNum,plays:g.plays}))})});
+      const d=await r.json();
+      if(d.status==="ok"){
+        if((d.updated||0)>0)setStatus("✓ Play-by-play uploaded for "+d.updated+" game(s)! Teammates can now see it.");
+        else if((d.rows||0)===0)setStatus("The Sheet has no games in its GAME LOG yet. Sync your games first, then run this again.");
+        else setStatus("Sent "+(d.received||0)+" game(s) but none matched the "+(d.rows||0)+" row(s) in GAME LOG.\nMost likely fix: in Apps Script, use Deploy → Manage deployments → ✏️ → New version → Deploy, then try again.");
+      }else if((d.message||"").toLowerCase().includes("unknown action"))
+        setStatus("Your Google Apps Script is still running the OLD code.\nFix: paste the new script, then Deploy → Manage deployments → ✏️ edit → Version: New version → Deploy. (A brand-new deployment creates a different URL — edit the existing one instead.)");
       else setStatus("Error: "+(d.message||"Unknown"))}catch(e){setStatus("Failed: "+e.message)}setBusy(false)};
   return(<div style={{maxWidth:480,margin:"0 auto",padding:20}}>
     <button onClick={onBack} style={{padding:"6px 14px",borderRadius:8,border:"2px solid #1B5E20",background:"transparent",color:"#1B5E20",fontSize:12,fontWeight:700,cursor:"pointer",marginBottom:16}}>BACK</button>
