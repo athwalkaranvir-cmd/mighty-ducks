@@ -103,36 +103,32 @@ function statLine(s){
   const pa=ab+bb+sf;const obp=pa>0?(h+bb)/pa:0;
   return{ab,avg,slg,obp};
 }
-// One readable card per player — fits phone width, no horizontal scroll
-function PlayerCard({name,s,rank}){
-  const{ab,avg,slg,obp}=statLine(s);
-  const marquee=[["H",s.H||0],["R",s.R||0],["RBI",s.RBI||0],["HR",s.HR||0]];
-  const rates=[["AVG",fmt3(avg,ab),"#1565C0"],["OBP",fmt3(obp,ab),"#FF6F00"],["SLG",fmt3(slg,ab),"#9C27B0"]];
-  const detail=[["AB",s.AB||0],["BB",s.BB||0],["1B",s["1B"]||0],["2B",s["2B"]||0],["3B",s["3B"]||0],
-    ["GO",s.GO||0],["SO",s.SO||0],["FO",s.FO||0],["FLO",s.FLO||0],["SF",s.SF||0],["FC",s.FC||0]];
-  return(<div style={{background:"#fff",borderRadius:14,border:"1px solid #e0dcc8",overflow:"hidden",marginBottom:12,boxShadow:"0 2px 6px rgba(0,0,0,.06)"}}>
-    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:"#1B5E20",padding:"11px 14px",gap:8}}>
-      <div style={{display:"flex",alignItems:"center",gap:9,minWidth:0}}>
-        {rank&&<span style={{fontSize:13,fontWeight:900,fontFamily:FM,color:"#1B5E20",background:"#FFD600",borderRadius:7,minWidth:24,height:24,display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{rank}</span>}
-        <span style={{fontSize:17,fontWeight:900,color:"#fff",fontFamily:FM,letterSpacing:.5,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{name}</span>
-      </div>
-      <span style={{fontSize:11,fontWeight:700,color:"#A5D6A7",flexShrink:0}}>{s.G||0} GP</span>
-    </div>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",background:"#f4f1e6"}}>
-      {marquee.map(([l,v],i)=><div key={l} style={{textAlign:"center",padding:"11px 4px",borderRight:i<3?"1px solid #e6e1cf":"none"}}>
-        <div style={{fontSize:24,fontWeight:900,color:"#1B5E20",fontFamily:FM,lineHeight:1}}>{v}</div>
-        <div style={{fontSize:9,fontWeight:800,color:"#8d7b5a",letterSpacing:1,marginTop:4}}>{l}</div></div>)}
-    </div>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",padding:"9px 0",borderBottom:"1px solid #f0ece0"}}>
-      {rates.map(([l,v,c],i)=><div key={l} style={{textAlign:"center",borderRight:i<2?"1px solid #f0ece0":"none"}}>
-        <div style={{fontSize:9,fontWeight:800,color:"#8d7b5a",letterSpacing:1}}>{l}</div>
-        <div style={{fontSize:17,fontWeight:800,color:c,fontFamily:FM,marginTop:1}}>{v}</div></div>)}
-    </div>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(50px,1fr))",gap:1,background:"#ece7d8",padding:1}}>
-      {detail.map(([l,v])=><div key={l} style={{background:"#fff",textAlign:"center",padding:"7px 2px"}}>
-        <div style={{fontSize:14,fontWeight:800,color:"#333",fontFamily:FM,lineHeight:1.1}}>{v}</div>
-        <div style={{fontSize:8,fontWeight:700,color:"#9c8f78",letterSpacing:.5,marginTop:2}}>{l}</div></div>)}
-    </div>
+// Full-roster stat tables, sized to fit a phone with no sideways scrolling.
+// Split into two stacked tables because all 20 columns can't fit one screen.
+function StatsTables({pl}){
+  const th={padding:"8px 2px",color:"#FFD600",fontWeight:800,fontSize:9,whiteSpace:"nowrap",textAlign:"center"};
+  const td={padding:"7px 2px",textAlign:"center",color:"#333",fontSize:11,fontFamily:FM};
+  const nameTd={padding:"7px 4px 7px 8px",fontWeight:700,color:"#1B5E20",fontSize:11,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"};
+  const Tbl=({title,cols,row})=>(
+    <div style={{marginBottom:18}}>
+      <div style={{fontSize:11,fontWeight:800,color:"#8d7b5a",letterSpacing:1,marginBottom:6}}>{title}</div>
+      <div style={{borderRadius:12,border:"1px solid #e0dcc8",overflow:"hidden",background:"#fff"}}>
+        <table style={{width:"100%",borderCollapse:"collapse",tableLayout:"fixed"}}>
+          <thead><tr style={{background:"#1B5E20"}}>
+            <th style={{...th,textAlign:"left",paddingLeft:8,width:78}}>PLAYER</th>
+            {cols.map(c=><th key={c} style={th}>{c}</th>)}</tr></thead>
+          <tbody>{pl.map(([n,s],i)=>(<tr key={n} style={{background:i%2===0?"#fff":"#f6f3e8",borderTop:"1px solid #f0ece0"}}>
+            <td style={nameTd}>{n}</td>
+            {row(s).map((v,j)=>{const ob=v!==null&&typeof v==="object";
+              return <td key={j} style={{...td,...(ob?{color:v.c,fontWeight:800,fontSize:10}:{})}}>{ob?v.v:v}</td>})}
+          </tr>))}</tbody></table></div></div>);
+  return(<div>
+    <Tbl title="BATTING" cols={["GP","AB","H","R","RBI","HR","AVG","OBP","SLG"]}
+      row={s=>{const{ab,avg,obp,slg}=statLine(s);return[s.G||0,ab,s.H||0,s.R||0,s.RBI||0,s.HR||0,
+        {v:fmt3(avg,ab),c:"#1565C0"},{v:fmt3(obp,ab),c:"#FF6F00"},{v:fmt3(slg,ab),c:"#9C27B0"}]}}/>
+    <Tbl title="BREAKDOWN" cols={["BB","1B","2B","3B","GO","SO","FO","FLO","SF","FC"]}
+      row={s=>[s.BB||0,s["1B"]||0,s["2B"]||0,s["3B"]||0,s.GO||0,s.SO||0,s.FO||0,s.FLO||0,s.SF||0,s.FC||0]}/>
+    <div style={{fontSize:10,color:"#8d7b5a",fontStyle:"italic",marginTop:-8}}>Both tables list players in the same order (sorted by batting average).</div>
   </div>);
 }
 
@@ -156,13 +152,14 @@ function localGameLines(games){
   const lines=[];
   (games||[]).filter(g=>g.plays&&g.awardEligible!==false).forEach(g=>{
     const per={};
-    (g.lineup||[]).forEach(n=>per[n]={player:n,date:g.date,AB:0,H:0,R:0,RBI:0,HR:0,"1B":0,"2B":0,"3B":0,BB:0});
-    (g.plays||[]).forEach(p=>{const s=per[p.batter];if(!s)return;const o=p.outcome;
+    const ensure=n=>{if(n&&!per[n])per[n]={player:n,date:g.date,AB:0,H:0,R:0,RBI:0,HR:0,"1B":0,"2B":0,"3B":0,BB:0};return per[n]};
+    (g.lineup||[]).forEach(ensure);
+    (g.plays||[]).forEach(p=>{const s=ensure(p.batter);if(!s)return;const o=p.outcome;
       if(!["BB","SF","FC"].includes(o))s.AB++;
       if(HITS.includes(o)){s.H++;s[o]++}
       if(o==="BB")s.BB++;
       s.RBI+=(p.rbi||0)});
-    (g.plays||[]).forEach(p=>{(p.scoredPlayers||[]).forEach(n=>{if(per[n])per[n].R++})});
+    (g.plays||[]).forEach(p=>{(p.scoredPlayers||[]).forEach(n=>{const s=ensure(n);if(s)s.R++})});
     Object.values(per).forEach(s=>{if(s.AB>0||s.H>0||s.R>0||s.RBI>0||s.BB>0)lines.push(s)});
   });
   return lines;
@@ -224,6 +221,7 @@ function WeeklyMVPSection({lines,note}){
 function StatsPage({games,onBack}){
   const [tab,setTab]=useState("stats");
   const [cloud,setCloud]=useState(null);
+  const [cloudPG,setCloudPG]=useState(null);
   const [cloudGameCount,setCloudGameCount]=useState(0);
   const [loading,setLoading]=useState(false);
   const [source,setSource]=useState("local");
@@ -236,6 +234,7 @@ function StatsPage({games,onBack}){
     fetch(syncUrl+"?action=stats").then(r=>r.json()).then(d=>{
       if(d.status==="ok"&&d.players&&Object.keys(d.players).length>0){
         setCloud(d.players);setSource("cloud");
+        if(d.playerGames)setCloudPG(d.playerGames);
         // Total team games = count from game log
         if(d.games)setCloudGameCount(d.games.length);
         // Or use max G from any player as fallback
@@ -272,8 +271,15 @@ function StatsPage({games,onBack}){
         background:source==="local"?"#1B5E20":"#e8f5e9",color:source==="local"?"#FFD600":"#1B5E20"}}>Local (This Device)</button>
     </div>}
     {pl.length===0?<div style={{textAlign:"center",padding:40,color:"#b0a88a"}}>No games yet.</div>:
-    tab==="stats"?<div>{pl.map(([n,s])=><PlayerCard key={n} name={n} s={s}/>)}</div>:
-    tab==="weekly"?<WeeklyMVPSection lines={localGameLines(games)}/>:
+    tab==="stats"?<StatsTables pl={pl}/>:
+    tab==="weekly"?(()=>{
+      const cl=cloudPG?cloudGameLines(cloudPG):null;
+      const ll=localGameLines(games);
+      const lines=(cl&&cl.length)?cl:ll;
+      const note=(!lines.length&&cloud&&!cloudPG)
+        ?"Weekly MVPs read game-by-game data from your Google Sheet, which needs the updated Apps Script. Redeploy it (Manage deployments → ✏️ → New version) and this will fill in."
+        :undefined;
+      return <WeeklyMVPSection lines={lines} note={note}/>})():
     <div>
       <div style={{textAlign:"center",fontSize:11,color:"#8d7b5a",marginBottom:12,fontStyle:"italic"}}>Min. {MIN_G} of {totalTeamGames} games (40%) to qualify</div>
       {qualPl.length===0?<div style={{textAlign:"center",padding:30,color:"#b0a88a",fontSize:13}}>No players have reached {MIN_G} games yet.</div>:
@@ -344,7 +350,7 @@ function StatsViewer({syncUrl}){
     </div>
 
     {tab==="stats"&&(pl.length===0?<div style={{textAlign:"center",padding:40,color:"#b0a88a"}}>No stats yet.</div>:
-      <div>{pl.map(([n,s])=><PlayerCard key={n} name={n} s={s}/>)}</div>)}
+      <StatsTables pl={pl}/>)}
 
     {tab==="weekly"&&<WeeklyMVPSection lines={cloudGameLines(data.playerGames)}
       note={data.playerGames?"No games yet.":"Weekly MVPs will show once the team admin updates the Google Apps Script and re-syncs."}/>}
