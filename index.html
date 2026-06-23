@@ -28,7 +28,7 @@ button{font-family:inherit;touch-action:manipulation}input{font-family:inherit}
 </head>
 <body>
 <div id="root"></div>
-<script type="text/babel" data-presets="env,react">
+<script type="text/plain" id="app-src">
 const {useState,useEffect,useRef} = React;
 const TEAM="MIGHTY DUCKS";
 const HITS=["1B","2B","3B","HR"];
@@ -1279,6 +1279,17 @@ try{
   window.__bootErrors.push("Render: "+((err&&err.message)||err));
   throw err;
 }
+</script>
+<script>
+(function(){
+  if(typeof Babel==="undefined"){window.__bootErrors.push("Babel didn't load (often a content/ad blocker blocking unpkg.com).");return;}
+  if(typeof React==="undefined"||typeof ReactDOM==="undefined"){window.__bootErrors.push("React didn't load (often a content/ad blocker blocking unpkg.com).");return;}
+  try{
+    var src=document.getElementById("app-src").textContent;
+    var out=Babel.transform(src,{presets:[["env"],["react",{runtime:"classic"}]]}).code;
+    var s=document.createElement("script");s.text=out;document.body.appendChild(s);
+  }catch(err){window.__bootErrors.push("Compile error: "+((err&&err.message)||err));}
+})();
 </script>
 <script>
 setTimeout(function(){
