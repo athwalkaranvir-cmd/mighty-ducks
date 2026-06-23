@@ -881,6 +881,7 @@ function App(){
   const [dragI,setDragI]=useState(null);const [rmConf,setRmConf]=useState(null);
   const [skipConf,setSkipConf]=useState(null);const [waitOpp,setWaitOpp]=useState(savedActive?!!savedActive.waitOpp:false);
   const [showPbP,setShowPbP]=useState(true);
+  const [endConfirm,setEndConfirm]=useState(false);
   const [addLate,setAddLate]=useState(false);const [lateP,setLateP]=useState("");
   const [awardDate,setAwardDate]=useState(null);
   const [showShare,setShowShare]=useState(false);
@@ -1004,6 +1005,13 @@ function App(){
 
   const doOpp=sc=>{setHist(h=>[...h,{plays,inn,outs,batIdx,bases,lastO,ourS,oppS,waitOpp}]);setOppS(p=>({...p,[oppAsk]:(p[oppAsk]||0)+sc}));setOppAsk(null);setWaitOpp(false);setOuts(0);setInn(p=>p+1);setBases({first:null,second:null,third:null});setLastO(null)};
 
+  // Manually end our half-inning (e.g., league 6-run rule). Mirrors the 3-out flow.
+  const endInning=()=>{
+    setHist(h=>[...h,{plays,inn,outs,batIdx,bases,lastO,ourS,oppS,waitOpp}]);
+    setEndConfirm(false);
+    if(gd.isHome){setOppAsk(inn)}else{setWaitOpp(true)}
+  };
+
   const undo=()=>{if(!hist.length)return;const prev=hist[hist.length-1];
     setPlays(prev.plays);setInn(prev.inn);setOuts(prev.outs);setBatIdx(prev.batIdx);
     setBases(prev.bases);setLastO(prev.lastO);setOurS(prev.ourS);setOppS(prev.oppS);setWaitOpp(!!prev.waitOpp);
@@ -1082,6 +1090,14 @@ function App(){
           <span style={{fontSize:11,color:"#8d7b5a",fontWeight:700}}>{showPbP?"HIDE ▲":"SHOW ▼"}</span></button>
         {showPbP&&<div style={{marginTop:10}}><PlayByPlay plays={plays} ourS={ourS} oppS={oppS} reverse={true}/></div>}
       </div>
+
+      {!waitOpp&&oppAsk===null&&<div style={{textAlign:"center",marginTop:14}}>
+        <button onClick={()=>{if(endConfirm){endInning()}else{setEndConfirm(true);setTimeout(()=>setEndConfirm(false),3000)}}}
+          style={{padding:"12px 22px",borderRadius:10,border:"2px solid #FF9800",cursor:"pointer",fontFamily:FM,fontWeight:800,fontSize:13,
+            background:endConfirm?"#FF9800":"transparent",color:endConfirm?"#fff":"#E65100"}}>
+          {endConfirm?"TAP AGAIN TO END INNING":"⛔ END OUR INNING"}</button>
+        {endConfirm&&<div style={{fontSize:10,color:"#8d7b5a",marginTop:5}}>Ends our at-bats now (6-run rule, etc.)</div>}
+      </div>}
 
       {waitOpp&&<div style={{background:"#FFF3E0",borderRadius:12,padding:16,marginTop:12,border:"2px solid #FF9800",textAlign:"center"}}>
         <div style={{fontSize:13,fontWeight:700,color:"#E65100",marginBottom:8}}>Waiting for {gd.opponent||"opponent"} to bat...</div>
