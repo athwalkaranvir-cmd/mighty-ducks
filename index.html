@@ -33,7 +33,7 @@ button{font-family:inherit;touch-action:manipulation}input{font-family:inherit}
 <div id="root"></div>
 <script type="text/plain" id="app-src">
 const {useState,useEffect,useRef} = React;
-const APP_VERSION="BUILD 9 (end-inning button)";
+const APP_VERSION="BUILD 11 (FC fix + summary rebuild)";
 const TEAM="MIGHTY DUCKS";
 const HITS=["1B","2B","3B","HR"];
 const OUTS=["GO","SO","FO","FLO"];
@@ -567,6 +567,12 @@ function SyncPage({games,onBack,onSynced,sheetLink,setSheetLink}){
       }else if((d.message||"").toLowerCase().includes("unknown action"))
         setStatus("Your Google Apps Script is still running the OLD code.\nFix: paste the new script, then Deploy → Manage deployments → ✏️ edit → Version: New version → Deploy. (A brand-new deployment creates a different URL — edit the existing one instead.)");
       else setStatus("Error: "+(d.message||"Unknown"))}catch(e){setStatus("Failed: "+e.message)}setBusy(false)};
+  const doRebuild=async()=>{if(!url.trim()){setStatus("Paste your Apps Script URL above.");return}
+    setBusy(true);setStatus("Rebuilding team summary...");
+    try{const r=await fetch(url.trim(),{method:"POST",headers:{"Content-Type":"text/plain"},body:JSON.stringify({action:"rebuild"})});
+      const d=await r.json();if(d.status==="ok")setStatus("✓ Team summary rebuilt to match the player tabs.");
+      else if((d.message||"").toLowerCase().includes("unknown action"))setStatus("Your Apps Script is the old version. Paste the new script, then Deploy → Manage deployments → ✏️ → New version → Deploy.");
+      else setStatus("Error: "+(d.message||"Unknown"))}catch(e){setStatus("Failed: "+e.message)}setBusy(false)};
   return(<div style={{maxWidth:480,margin:"0 auto",padding:20}}>
     <button onClick={onBack} style={{padding:"6px 14px",borderRadius:8,border:"2px solid #1B5E20",background:"transparent",color:"#1B5E20",fontSize:12,fontWeight:700,cursor:"pointer",marginBottom:16}}>BACK</button>
     <div style={{textAlign:"center",marginBottom:20}}><div style={{fontSize:22,fontWeight:900,color:"#1B5E20",fontFamily:FM}}>SYNC SETTINGS</div></div>
@@ -584,7 +590,7 @@ function SyncPage({games,onBack,onSynced,sheetLink,setSheetLink}){
     {/* Sync Section */}
     <div style={{background:"#faf8f2",borderRadius:16,padding:20,border:"1px solid #e0dcc8",marginBottom:16}}>
       <div style={{fontSize:12,fontWeight:700,color:"#1B5E20",letterSpacing:1,marginBottom:6}}>SYNC GAMES</div>
-      <div style={{fontSize:11,color:"#8d7b5a",marginBottom:10}}>Games sync automatically when saved (and retry on their own if you're offline). The button below is just a manual backup.</div>
+      <div style={{fontSize:11,color:"#8d7b5a",marginBottom:10}}>Games upload only when you choose to — either at save time or with the button below. Nothing syncs on its own.</div>
       <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:12}}>
         <div style={{width:14,height:14,borderRadius:"50%",background:un.length?"#FF9800":"#4CAF50",flexShrink:0}}/>
         <span style={{fontSize:14,color:"#333",fontWeight:600}}>{un.length?`${un.length} pending`:"All synced"}</span></div>
@@ -597,6 +603,9 @@ function SyncPage({games,onBack,onSynced,sheetLink,setSheetLink}){
       <button onClick={doBackfill} disabled={busy} style={{width:"100%",marginTop:8,padding:11,borderRadius:10,border:"2px solid #1B5E20",background:"transparent",color:"#1B5E20",fontWeight:700,fontSize:12,cursor:busy?"default":"pointer",opacity:busy?.5:1}}>
         SHARE PLAY-BY-PLAY FOR ALL GAMES</button>
       <div style={{fontSize:10,color:"#8d7b5a",marginTop:6,fontStyle:"italic"}}>Uploads the play-by-play of already-synced games so teammates can see it on the share link. (New games include it automatically.)</div>
+      <button onClick={doRebuild} disabled={busy} style={{width:"100%",marginTop:8,padding:11,borderRadius:10,border:"2px solid #795548",background:"transparent",color:"#795548",fontWeight:700,fontSize:12,cursor:busy?"default":"pointer",opacity:busy?.5:1}}>
+        FIX / REBUILD TEAM SUMMARY</button>
+      <div style={{fontSize:10,color:"#8d7b5a",marginTop:6,fontStyle:"italic"}}>Recomputes the TEAM SUMMARY tab from each player's tab, so the totals line up again.</div>
       {status&&<div style={{marginTop:12,padding:12,borderRadius:8,background:status.includes("✓")?"#e8f5e9":"#fff3e0",color:status.includes("✓")?"#2E7D32":"#E65100",fontSize:12,lineHeight:1.5,whiteSpace:"pre-wrap"}}>{status}</div>}
     </div>
 
@@ -645,8 +654,8 @@ function OutModal({batter,outcome,onOk,onNo,bases}){
     if(f==="3rd")o.push({v:"scored",l:"→ Scored"});
     if(allowOut)o.push({v:"out",l:"OUT"});
     return o};
-  const sp=Object.entries(adv).filter(([,v])=>v==="scored").map(([n])=>n);
-  const outsOnPlay=Object.entries(adv).filter(([,v])=>v==="out").map(([n])=>n);
+  const sp=Object.entries(adv).filter(([n,v])=>v==="scored"&&!(isFC&&n===fcPlayer)).map(([n])=>n);
+  const outsOnPlay=Object.entries(adv).filter(([n,v])=>v==="out"&&!(isFC&&n===fcPlayer)).map(([n])=>n);
   const showRunners=((reachBase||outWithRunners)&&hasR)||isHR;
 
   return(
@@ -796,7 +805,7 @@ function DailyAwards({games,date,onDone}){
   </div>);
 }
 
-function Summary({gd,plays,ourS,oppS,onSave}){
+function Summary({gd,plays,ourS,oppS,onSave,canUpload}){
   const stats={};(gd.lineup||[]).forEach(n=>{stats[n]={AB:0,R:0,H:0,"1B":0,"2B":0,"3B":0,HR:0,RBI:0,BB:0}});
   plays.forEach(p=>{const s=stats[p.batter];if(!s)return;if(!["BB","SF","FC"].includes(p.outcome))s.AB++;
     if(HITS.includes(p.outcome)){s.H++;s[p.outcome]++}if(p.outcome==="BB")s.BB++;s.RBI+=(p.rbi||0);
@@ -804,6 +813,7 @@ function Summary({gd,plays,ourS,oppS,onSave}){
   const oT=Object.values(ourS).reduce((a,b)=>a+b,0),opT=Object.values(oppS).reduce((a,b)=>a+b,0);
   const w=oT>opT,t=oT===opT;
   const [award,setAward]=useState(true);
+  const [upload,setUpload]=useState(true);
   return(<div style={{maxWidth:520,margin:"0 auto",padding:20}}>
     <div style={{textAlign:"center",marginBottom:16}}>
       <div style={{fontSize:14,color:"#8d7b5a",fontWeight:600}}>GAME COMPLETE</div>
@@ -830,7 +840,15 @@ function Summary({gd,plays,ourS,oppS,onSave}){
           background:award?"#1B5E20":"#e8f5e9",color:award?"#FFD600":"#1B5E20",fontWeight:800,fontSize:13}}>{award?"✓ YES, COUNT IT":"YES, COUNT IT"}</button>
         <button onClick={()=>setAward(false)} style={{flex:1,padding:12,borderRadius:10,border:"none",cursor:"pointer",fontFamily:FM,
           background:!award?"#8d7b5a":"#f0efe6",color:!award?"#fff":"#8d7b5a",fontWeight:800,fontSize:13}}>{!award?"✓ DON'T COUNT":"DON'T COUNT"}</button></div></div>
-    <button onClick={()=>onSave(award)} style={{width:"100%",padding:16,borderRadius:14,border:"none",background:"#1B5E20",color:"#FFD600",fontWeight:900,fontSize:16,cursor:"pointer",marginTop:16,fontFamily:FM,boxShadow:"0 6px 24px rgba(27,94,32,.3)"}}>SAVE GAME</button>
+    {canUpload&&<div style={{background:"#faf8f2",borderRadius:14,padding:16,marginTop:12,border:"1px solid #e0dcc8"}}>
+      <div style={{fontSize:13,fontWeight:700,color:"#1B5E20",marginBottom:4,textAlign:"center"}}>Upload this game to Google Sheets?</div>
+      <div style={{fontSize:11,color:"#8d7b5a",marginBottom:10,textAlign:"center"}}>This is what teammates see on the share link. You can also upload later from the Sync page.</div>
+      <div style={{display:"flex",gap:8}}>
+        <button onClick={()=>setUpload(true)} style={{flex:1,padding:12,borderRadius:10,border:"none",cursor:"pointer",fontFamily:FM,
+          background:upload?"#1B5E20":"#e8f5e9",color:upload?"#FFD600":"#1B5E20",fontWeight:800,fontSize:13}}>{upload?"✓ YES, UPLOAD":"YES, UPLOAD"}</button>
+        <button onClick={()=>setUpload(false)} style={{flex:1,padding:12,borderRadius:10,border:"none",cursor:"pointer",fontFamily:FM,
+          background:!upload?"#8d7b5a":"#f0efe6",color:!upload?"#fff":"#8d7b5a",fontWeight:800,fontSize:13}}>{!upload?"✓ KEEP LOCAL":"KEEP LOCAL"}</button></div></div>}
+    <button onClick={()=>onSave(award,canUpload&&upload)} style={{width:"100%",padding:16,borderRadius:14,border:"none",background:"#1B5E20",color:"#FFD600",fontWeight:900,fontSize:16,cursor:"pointer",marginTop:16,fontFamily:FM,boxShadow:"0 6px 24px rgba(27,94,32,.3)"}}>SAVE GAME</button>
   </div>);
 }
 
@@ -936,30 +954,18 @@ function App(){
     if(!rosterReady.current)return; // don't echo the initial cloud pull back up
     pushRoster(roster);
   },[roster]);
-  // ── Background auto-sync of games ──
-  // Whenever there are unsynced games, push them automatically: right after a
-  // save, when the connection comes back, and on a retry timer. No button needed.
-  const syncBusy=useRef(false);
-  const gamesRef=useRef(games);useEffect(()=>{gamesRef.current=games},[games]);
-  const autoSync=async()=>{
-    const url=ld("sync_url","");if(!url)return;
-    if(syncBusy.current)return;
-    const un=gamesRef.current.filter(g=>!g.synced);if(!un.length)return;
-    syncBusy.current=true;
+  // ── Manual game upload (no automatic syncing) ──
+  // A game only goes to Google Sheets when you choose "upload" at save time,
+  // or when you hit Sync on the Sync page. Nothing uploads on its own.
+  const uploadGame=async(rec)=>{
+    const url=ld("sync_url","");if(!url)return false;
     try{
-      const r=await fetch(url,{method:"POST",headers:{"Content-Type":"text/plain"},body:JSON.stringify({action:"sync_all",games:un})});
+      const r=await fetch(url,{method:"POST",headers:{"Content-Type":"text/plain"},body:JSON.stringify({action:"sync_all",games:[rec]})});
       const d=await r.json();
-      if(d.status==="ok"){const ids=un.map(g=>g.id);setGames(p=>p.map(g=>ids.includes(g.id)?{...g,synced:true}:g))}
-    }catch(e){/* offline or backend down — the timer/online listener will retry */}
-    syncBusy.current=false;
+      if(d.status==="ok"){setGames(p=>p.map(g=>g.id===rec.id?{...g,synced:true}:g));return true}
+    }catch(e){/* offline / backend down — left unsynced, upload later from Sync page */}
+    return false;
   };
-  useEffect(()=>{autoSync()},[games]); // fires right after a game is saved
-  useEffect(()=>{
-    const onUp=()=>autoSync();
-    window.addEventListener("online",onUp);
-    const t=setInterval(autoSync,120000); // retry every 2 min while anything is pending
-    return()=>{window.removeEventListener("online",onUp);clearInterval(t)};
-  },[]);
   useEffect(()=>{if(sheetLink)sv("sheet_link",sheetLink)},[sheetLink]);
   // Continuously snapshot an in-progress game so an idle reload/crash can resume it
   useEffect(()=>{
@@ -1017,8 +1023,9 @@ function App(){
     setBases(prev.bases);setLastO(prev.lastO);setOurS(prev.ourS);setOppS(prev.oppS);setWaitOpp(!!prev.waitOpp);
     setHist(h=>h.slice(0,-1))};
 
-  const saveG=(awardEligible=true)=>{const rec={...gd,plays,ourScoreByInning:ourS,oppScoreByInning:oppS,synced:false,awardEligible:awardEligible,id:Date.now()};
+  const saveG=(awardEligible=true,doUpload=false)=>{const rec={...gd,plays,ourScoreByInning:ourS,oppScoreByInning:oppS,synced:false,awardEligible:awardEligible,id:Date.now()};
     const updated=[...games,rec];setGames(updated);
+    if(doUpload)uploadGame(rec); // only uploads when chosen at save time
     // Show the daily MVP only when there are 2+ award-eligible games today
     const today=gd.date||new Date().toISOString().slice(0,10);
     const eligibleToday=updated.filter(g=>g.date===today&&g.plays&&g.awardEligible!==false).length;
@@ -1035,7 +1042,7 @@ function App(){
   if(scr==="detail"&&viewG)return<GameDetail game={viewG} onBack={()=>setScr("history")}/>;
   if(scr==="sync")return<SyncPage games={games} onBack={()=>setScr("setup")} onSynced={ids=>setGames(p=>p.map(g=>ids.includes(g.id)?{...g,synced:true}:g))} sheetLink={sheetLink} setSheetLink={setSheetLink}/>;
   if(scr==="awards"&&awardDate)return<DailyAwards games={games} date={awardDate} onDone={()=>{setAwardDate(null);setScr("setup")}}/>;
-  if(scr==="summary")return<Summary gd={gd} plays={plays} ourS={ourS} oppS={oppS} onSave={saveG}/>;
+  if(scr==="summary")return<Summary gd={gd} plays={plays} ourS={ourS} oppS={oppS} onSave={saveG} canUpload={!!ld("sync_url","")}/>;
 
   if(scr==="scoring"&&gd){
     const BtnStyle=(c)=>({padding:"10px 6px",borderRadius:10,border:"none",cursor:"pointer",background:OC[c],color:"#fff",fontWeight:700,fontSize:11,fontFamily:FM,minWidth:0});
@@ -1182,7 +1189,7 @@ function App(){
         {ld("sync_url","")&&(()=>{const pend=games.filter(g=>!g.synced).length;
           return(<div style={{display:"inline-flex",alignItems:"center",gap:6,marginTop:8,padding:"4px 12px",borderRadius:20,background:pend?"#FFF3E0":"#e8f5e9"}}>
             <div style={{width:8,height:8,borderRadius:"50%",background:pend?"#FF9800":"#4CAF50"}}/>
-            <span style={{fontSize:10,fontWeight:700,color:pend?"#E65100":"#2E7D32"}}>{pend?`${pend} game${pend!==1?"s":""} uploading when online…`:"All synced automatically"}</span></div>);})()}</div>
+            <span style={{fontSize:10,fontWeight:700,color:pend?"#E65100":"#2E7D32"}}>{pend?`${pend} game${pend!==1?"s":""} not uploaded — upload from Sync`:"All games uploaded"}</span></div>);})()}</div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:6,marginBottom:16}}>
         <button onClick={()=>setScr("stats")} style={{padding:10,borderRadius:10,border:"2px solid #1B5E20",background:"transparent",color:"#1B5E20",fontWeight:700,fontSize:10,cursor:"pointer"}}>STATS</button>
         <button onClick={()=>setScr("history")} style={{padding:10,borderRadius:10,border:"2px solid #1B5E20",background:"transparent",color:"#1B5E20",fontWeight:700,fontSize:10,cursor:"pointer"}}>GAMES</button>
@@ -1327,7 +1334,7 @@ setTimeout(function(){
     msg="The app didn't finish loading. Try a hard reload: fully close this Safari tab and reopen the link. If it persists, clear this site's data: Settings \u2192 Safari \u2192 Advanced \u2192 Website Data.";
   }
   function esc(s){return String(s).replace(/[&<>]/g,function(c){return c==="&"?"&amp;":c==="<"?"&lt;":"&gt;";});}
-  document.body.innerHTML='<div style="max-width:560px;margin:30px auto;padding:22px;font-family:-apple-system,Segoe UI,sans-serif;color:#333;background:#fff;border-radius:14px;border:1px solid #e0dcc8;line-height:1.55"><div style="font-size:18px;font-weight:800;color:#1B5E20;margin-bottom:10px">Mighty Ducks \u2014 couldn\'t start (build 9)</div><pre style="white-space:pre-wrap;font-size:13px;margin:0 0 14px;font-family:inherit">'+esc(msg)+'</pre><button onclick="location.reload()" style="padding:10px 18px;border:none;border-radius:10px;background:#1B5E20;color:#FFD600;font-weight:800;font-size:14px">RELOAD</button></div>';
+  document.body.innerHTML='<div style="max-width:560px;margin:30px auto;padding:22px;font-family:-apple-system,Segoe UI,sans-serif;color:#333;background:#fff;border-radius:14px;border:1px solid #e0dcc8;line-height:1.55"><div style="font-size:18px;font-weight:800;color:#1B5E20;margin-bottom:10px">Mighty Ducks \u2014 couldn\'t start (build 11)</div><pre style="white-space:pre-wrap;font-size:13px;margin:0 0 14px;font-family:inherit">'+esc(msg)+'</pre><button onclick="location.reload()" style="padding:10px 18px;border:none;border-radius:10px;background:#1B5E20;color:#FFD600;font-weight:800;font-size:14px">RELOAD</button></div>';
 },6000);
 </script>
 </body>
