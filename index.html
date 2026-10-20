@@ -78,8 +78,8 @@ input{font-family:inherit}
 <div class="hud-c hud-tl"></div><div class="hud-c hud-tr"></div><div class="hud-c hud-bl"></div><div class="hud-c hud-br"></div>
 <script type="text/plain" id="app-src">
 const {useState,useEffect,useRef} = React;
-const APP_VERSION="BUILD 14 (rename players)";
-const TEAM="MIGHTY DUCKS";
+const APP_VERSION="BUILD 16 (per-team backend)";
+let TEAM="MIGHTY DUCKS"; // reassigned from the active team below
 const HITS=["1B","2B","3B","HR"];
 const OUTS=["GO","SO","FO","FLO"];
 const OTHER=["BB","SF","FC"];
@@ -87,6 +87,35 @@ const OC={"1B":"#4CAF50","2B":"#FF9800","3B":"#9C27B0","HR":"#F44336","BB":"#219
 const OL={"1B":"Single","2B":"Double","3B":"Triple","HR":"Home Run","BB":"Walk","SF":"Sac Fly","FC":"Fielder's Choice","GO":"Ground Out","SO":"Strikeout","FO":"Foul Out","FLO":"Fly Out"};
 const sv=(k,v)=>{try{localStorage.setItem("md_"+k,JSON.stringify(v))}catch(e){}};
 const ld=(k,d)=>{try{const v=localStorage.getItem("md_"+k);return v?JSON.parse(v):d}catch(e){return d}};
+// ══ Multi-team support ══
+// Each team keeps its own games, roster, sheet connection etc. under a
+// per-team key prefix. On the first run of this build we wrap the existing
+// (single-team) data in a "Mighty Ducks" team so nothing is lost.
+function migrateTeams(){
+  let teams=ld("teams",null);
+  if(teams&&teams.length)return teams;
+  const id="mightyducks";
+  teams=[{id:id,name:"MIGHTY DUCKS"}];
+  ["games","roster","sync_url","sheet_link","active_game"].forEach(function(k){
+    const oldV=localStorage.getItem("md_"+k);
+    const newK="md_t_"+id+"_"+k;
+    if(oldV!==null&&localStorage.getItem(newK)===null){try{localStorage.setItem(newK,oldV)}catch(e){}}
+  });
+  sv("teams",teams);sv("active_team",id);
+  return teams;
+}
+let TEAMS=migrateTeams();
+let TEAM_ID=ld("active_team",(TEAMS[0]||{}).id);
+if(!TEAMS.some(function(t){return t.id===TEAM_ID})){TEAM_ID=(TEAMS[0]||{}).id;sv("active_team",TEAM_ID);}
+TEAM=((TEAMS.find(function(t){return t.id===TEAM_ID}))||{name:"MY TEAM"}).name;
+const tkey=k=>"t_"+TEAM_ID+"_"+k;            // key within the active team
+const ldT=(k,d)=>ld(tkey(k),d);
+const svT=(k,v)=>sv(tkey(k),v);
+// Team management (these reload so all state re-reads the new team cleanly)
+function switchTeam(id){sv("active_team",id);location.reload();}
+function addTeam(name){const id="t"+Date.now().toString(36);const ts=ld("teams",[]);ts.push({id:id,name:name});sv("teams",ts);sv("active_team",id);location.reload();}
+function renameTeam(id,name){const ts=ld("teams",[]).map(t=>t.id===id?{id:t.id,name:name}:t);sv("teams",ts);location.reload();}
+function deleteTeam(id){let ts=ld("teams",[]);if(ts.length<=1)return;ts=ts.filter(t=>t.id!==id);sv("teams",ts);["games","roster","sync_url","sheet_link","active_game"].forEach(k=>{try{localStorage.removeItem("md_t_"+id+"_"+k)}catch(e){}});if(ld("active_team","")===id)sv("active_team",ts[0].id);location.reload();}
 const FM="'Fira Mono',monospace";
 
 function Diamond({bases,last,ab}){
@@ -370,7 +399,7 @@ function StatsPage({games,onBack}){
 
   // Try to fetch from Google Sheets on mount
   useEffect(()=>{
-    const syncUrl=ld("sync_url","");
+    const syncUrl=ldT("sync_url","");
     if(!syncUrl)return;
     setLoading(true);
     fetch(syncUrl+"?action=stats").then(r=>r.json()).then(d=>{
@@ -450,7 +479,8 @@ function StatsPage({games,onBack}){
 }
 
 // ─── Read-Only Stats Viewer (shared link) ───
-function StatsViewer({syncUrl}){
+function StatsViewer({syncUrl,teamName}){
+  const TEAM=teamName||"TEAM"; // the shared team's name, from the link
   const [tab,setTab]=useState("stats");
   const [data,setData]=useState(null);
   const [loading,setLoading]=useState(true);
@@ -642,7 +672,7 @@ function HistoryPage({games,onBack,onView,onDelete}){
   const [loading,setLoading]=useState(false);
 
   useEffect(()=>{
-    const syncUrl=ld("sync_url","");
+    const syncUrl=ldT("sync_url","");
     if(!syncUrl)return;
     setLoading(true);
     fetch(syncUrl+"?action=stats").then(r=>r.json()).then(d=>{
@@ -692,10 +722,15 @@ function HistoryPage({games,onBack,onView,onDelete}){
 }
 
 function SyncPage({games,onBack,onSynced,sheetLink,setSheetLink}){
-  const [url,setUrl]=useState(()=>ld("sync_url",""));const [status,setStatus]=useState("");const [busy,setBusy]=useState(false);
+  const [url,setUrl]=useState(()=>ldT("sync_url",""));const [status,setStatus]=useState("");const [busy,setBusy]=useState(false);
   const [localSheet,setLocalSheet]=useState(sheetLink||"");
-  const un=games.filter(g=>!g.synced);useEffect(()=>{if(url)sv("sync_url",url)},[url]);
-  const doSync=async()=>{if(!url.trim()){setStatus("Paste your Apps Script URL above.");return}if(!un.length){setStatus("All synced!");return}
+  const un=games.filter(g=>!g.synced);useEffect(()=>{if(url)svT("sync_url",url)},[url]);
+  // Warn if this URL is already used by a DIFFERENT team — that would mix their stats
+  const dupTeam=(()=>{const u=(url||"").trim();if(!u)return null;
+    const ts=ld("teams",[]);for(let i=0;i<ts.length;i++){if(ts[i].id!==TEAM_ID&&(ld("t_"+ts[i].id+"_sync_url","")||"").trim()===u)return ts[i].name;}return null;})();
+  const doSync=async()=>{if(!url.trim()){setStatus("Paste your Apps Script URL above.");return}
+    if(dupTeam){setStatus("That Sheet belongs to \""+dupTeam+"\". Make a new Sheet for "+TEAM+" first so stats don't mix.");return}
+    if(!un.length){setStatus("All synced!");return}
     setBusy(true);setStatus("Syncing "+un.length+" game(s)...");
     try{const r=await fetch(url.trim(),{method:"POST",headers:{"Content-Type":"text/plain"},body:JSON.stringify({action:"sync_all",games:un})});
       const d=await r.json();if(d.status==="ok"){setStatus("✓ Synced "+un.length+" game(s)!");onSynced(un.map(g=>g.id))}
@@ -703,7 +738,7 @@ function SyncPage({games,onBack,onSynced,sheetLink,setSheetLink}){
   const doTest=async()=>{if(!url.trim()){setStatus("Paste URL first.");return}setBusy(true);setStatus("Testing...");
     try{const r=await fetch(url.trim());const d=await r.json();setStatus(d.status==="ok"?"✓ Connected!":"Unexpected: "+JSON.stringify(d))}
     catch(e){setStatus("Failed: "+e.message)}setBusy(false)};
-  const saveSheet=()=>{setSheetLink(localSheet);sv("sheet_link",localSheet);setStatus("✓ Sheet link saved!")};
+  const saveSheet=()=>{setSheetLink(localSheet);svT("sheet_link",localSheet);setStatus("✓ Sheet link saved!")};
   const withPlays=games.filter(g=>g.plays&&g.plays.length);
   const doBackfill=async()=>{if(!url.trim()){setStatus("Paste your Apps Script URL above.");return}
     if(!withPlays.length){setStatus("No play-by-play to upload yet.");return}
@@ -726,7 +761,18 @@ function SyncPage({games,onBack,onSynced,sheetLink,setSheetLink}){
       else setStatus("Error: "+(d.message||"Unknown"))}catch(e){setStatus("Failed: "+e.message)}setBusy(false)};
   return(<div style={{maxWidth:480,margin:"0 auto",padding:20}}>
     <button onClick={onBack} style={{padding:"6px 14px",borderRadius:8,border:"2px solid #1B5E20",background:"transparent",color:"#1B5E20",fontSize:12,fontWeight:700,cursor:"pointer",marginBottom:16}}>BACK</button>
-    <div style={{textAlign:"center",marginBottom:20}}><div style={{fontSize:22,fontWeight:900,color:"#1B5E20",fontFamily:FM}}>SYNC SETTINGS</div></div>
+    <div style={{textAlign:"center",marginBottom:14}}><div style={{fontSize:22,fontWeight:900,color:"#1B5E20",fontFamily:FM}}>SYNC SETTINGS</div></div>
+
+    {/* Which team you're connecting */}
+    <div style={{background:"#0a1422",borderRadius:14,padding:"12px 16px",marginBottom:14,border:"1px solid rgba(0,230,118,.4)"}}>
+      <div style={{fontSize:10,letterSpacing:2,color:"#7fe9b4",fontWeight:700}}>CONNECTING THIS TEAM</div>
+      <div style={{fontSize:20,fontWeight:900,color:"#eafff2",fontFamily:FM,marginTop:2}}>{TEAM}</div>
+      <div style={{fontSize:10,color:"#9fb4c6",marginTop:4,lineHeight:1.5}}>Each team needs its <b>own separate Google Sheet</b>. Don't reuse another team's Sheet or their stats will mix.</div>
+    </div>
+    {dupTeam&&<div style={{background:"#4a1515",border:"2px solid #F44336",borderRadius:12,padding:"12px 14px",marginBottom:14}}>
+      <div style={{fontSize:12,fontWeight:800,color:"#ff8a80"}}>⚠ This Sheet already belongs to "{dupTeam}"</div>
+      <div style={{fontSize:11,color:"#ffb3ac",marginTop:4,lineHeight:1.5}}>Using it here will mix {TEAM}'s stats with {dupTeam}'s. Make a brand-new Google Sheet for {TEAM} and paste that URL instead.</div>
+    </div>}
 
     {/* Google Sheet Link */}
     <div style={{background:"#f2f6fb",borderRadius:16,padding:20,border:"1px solid #cdd9e6",marginBottom:16}}>
@@ -1044,24 +1090,76 @@ function RenameModal({player,roster,onLocalRename,onClose,syncUrl}){
   </div>);
 }
 
+function TeamModal({onClose}){
+  const teams=ld("teams",[]);const activeId=ld("active_team","");
+  const [mode,setMode]=useState("list");
+  const [val,setVal]=useState("");
+  const [renameId,setRenameId]=useState(null);
+  const [delConf,setDelConf]=useState(null);
+  const box={position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:1200,display:"flex",alignItems:"center",justifyContent:"center",padding:18};
+  const card={background:"#f2f6fb",borderRadius:16,padding:20,maxWidth:360,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,.4)",maxHeight:"85vh",overflowY:"auto"};
+  const field={width:"100%",padding:"11px 12px",borderRadius:10,border:"1px solid #cdd9e6",fontSize:15,background:"#fff",outline:"none",marginBottom:12,boxSizing:"border-box"};
+  const prim={flex:1,padding:12,borderRadius:10,border:"none",background:"#1B5E20",color:"#FFD600",fontWeight:800,cursor:"pointer"};
+  const sec={flex:1,padding:12,borderRadius:10,border:"2px solid #7e93b2",background:"transparent",color:"#5e6e82",fontWeight:700,cursor:"pointer"};
+  if(delConf)return(<div style={box}><div style={card}>
+    <div style={{fontSize:15,fontWeight:700,color:"#333",marginBottom:8}}>Delete “{delConf.name}”?</div>
+    <div style={{fontSize:12,color:"#5e6e82",lineHeight:1.5,marginBottom:16}}>This removes that team's games and roster <b>from this device</b>. Its Google Sheet (if any) is not touched. This can't be undone.</div>
+    <div style={{display:"flex",gap:10}}>
+      <button style={sec} onClick={()=>setDelConf(null)}>Cancel</button>
+      <button style={{flex:1,padding:12,borderRadius:10,border:"none",background:"#F44336",color:"#fff",fontWeight:800,cursor:"pointer"}} onClick={()=>deleteTeam(delConf.id)}>Delete</button></div>
+  </div></div>);
+  return(<div style={box}><div style={card}>
+    {mode==="list"?<React.Fragment>
+      <div style={{fontSize:16,fontWeight:800,color:"#1B5E20",marginBottom:4}}>Your teams</div>
+      <div style={{fontSize:11,color:"#5e6e82",marginBottom:14}}>Each team keeps its own games, roster and Sheet.</div>
+      {teams.map(t=>(<div key={t.id} style={{display:"flex",alignItems:"center",gap:6,marginBottom:8}}>
+        <button onClick={()=>{if(t.id!==activeId)switchTeam(t.id);else onClose()}} style={{flex:1,textAlign:"left",padding:"11px 14px",borderRadius:10,cursor:"pointer",fontWeight:800,fontSize:14,
+          border:t.id===activeId?"2px solid #1B5E20":"1px solid #cdd9e6",background:t.id===activeId?"#e8f5e9":"#fff",color:"#1B5E20"}}>
+          {t.name}{t.id===activeId?"  ✓":""}</button>
+        <button onClick={()=>{setRenameId(t.id);setVal(t.name);setMode("rename")}} title="Rename" style={{padding:"9px 11px",borderRadius:9,border:"1px solid #cdd9e6",background:"#fff",color:"#5e6e82",cursor:"pointer",fontSize:13}}>✎</button>
+        {teams.length>1&&<button onClick={()=>setDelConf(t)} title="Delete" style={{padding:"9px 11px",borderRadius:9,border:"1px solid #f3c0c0",background:"#fff",color:"#F44336",cursor:"pointer",fontSize:13}}>✕</button>}
+      </div>))}
+      <button onClick={()=>{setVal("");setMode("add")}} style={{width:"100%",padding:12,borderRadius:10,border:"2px dashed #1B5E20",background:"transparent",color:"#1B5E20",fontWeight:800,cursor:"pointer",marginTop:4}}>+ ADD A TEAM</button>
+      <button onClick={onClose} style={{width:"100%",padding:11,borderRadius:10,border:"none",background:"#dce5f0",color:"#5e6e82",fontWeight:700,cursor:"pointer",marginTop:10}}>Close</button>
+    </React.Fragment>:mode==="add"?<React.Fragment>
+      <div style={{fontSize:16,fontWeight:800,color:"#1B5E20",marginBottom:12}}>Add a team</div>
+      <input value={val} autoFocus placeholder="Team name" onChange={e=>setVal(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&val.trim())addTeam(val.trim())}} style={field}/>
+      <div style={{fontSize:11,color:"#5e6e82",marginBottom:12,lineHeight:1.5}}>Starts empty. You can connect its own Google Sheet later from the Sync page, or just track it on your phone.</div>
+      <div style={{display:"flex",gap:10}}>
+        <button style={sec} onClick={()=>setMode("list")}>Cancel</button>
+        <button style={prim} onClick={()=>{if(val.trim())addTeam(val.trim())}}>Create</button></div>
+    </React.Fragment>:<React.Fragment>
+      <div style={{fontSize:16,fontWeight:800,color:"#1B5E20",marginBottom:12}}>Rename team</div>
+      <input value={val} autoFocus onChange={e=>setVal(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&val.trim())renameTeam(renameId,val.trim())}} style={field}/>
+      <div style={{display:"flex",gap:10}}>
+        <button style={sec} onClick={()=>setMode("list")}>Cancel</button>
+        <button style={prim} onClick={()=>{if(val.trim())renameTeam(renameId,val.trim())}}>Save</button></div>
+    </React.Fragment>}
+  </div></div>);
+}
+
 function App(){
   // Check if this is a read-only stats view link
   const params=new URLSearchParams(window.location.search);
   const viewMode=params.get("view");
   // Save sync URL if passed in any link
   const syncFromUrl=params.get("sync");
-  if(syncFromUrl){sv("sync_url",syncFromUrl);window.history.replaceState({},"",window.location.pathname+(viewMode?"?view="+viewMode:""))}
-  const syncUrl=syncFromUrl||ld("sync_url","");
+  const urlTeam=params.get("team");
+  if(syncFromUrl){
+    if(viewMode!=="stats")svT("sync_url",syncFromUrl); // viewing shouldn't overwrite a team's connection
+    window.history.replaceState({},"",window.location.pathname+(viewMode?"?view="+viewMode:""));
+  }
+  const syncUrl=syncFromUrl||ldT("sync_url","");
   if(viewMode==="stats"&&syncUrl){
-    return <StatsViewer syncUrl={syncUrl}/>;
+    return <StatsViewer syncUrl={syncUrl} teamName={urlTeam||TEAM}/>;
   }
 
-  const savedActive=ld("active_game",null);
+  const savedActive=ldT("active_game",null);
   const [scr,setScr]=useState(savedActive?(savedActive.scr||"scoring"):"setup");const [gd,setGd]=useState(savedActive?savedActive.gd:null);const [plays,setPlays]=useState(savedActive?savedActive.plays:[]);
   const [inn,setInn]=useState(savedActive?savedActive.inn:1);const [outs,setOuts]=useState(savedActive?savedActive.outs:0);const [batIdx,setBatIdx]=useState(savedActive?savedActive.batIdx:0);
   const [bases,setBases]=useState(savedActive?savedActive.bases:{first:null,second:null,third:null});const [lastO,setLastO]=useState(savedActive?savedActive.lastO:null);
   const [hist,setHist]=useState(savedActive&&savedActive.hist?savedActive.hist:[]);
-  const [modal,setModal]=useState(null);const [games,setGames]=useState(()=>ld("games",[]));
+  const [modal,setModal]=useState(null);const [games,setGames]=useState(()=>ldT("games",[]));
   const [picking,setPicking]=useState(false);const [ourS,setOurS]=useState(savedActive?savedActive.ourS:{});const [oppS,setOppS]=useState(savedActive?savedActive.oppS:{});
   const [oppAsk,setOppAsk]=useState(null);const [viewG,setViewG]=useState(null);
   const [roster,setRoster]=useState(()=>{
@@ -1071,23 +1169,23 @@ function App(){
       if(r){const decoded=JSON.parse(decodeURIComponent(r));
         if(Array.isArray(decoded)&&decoded.length>0){
           // Merge with existing roster (don't lose players)
-          const existing=ld("roster",[]);
+          const existing=ldT("roster",[]);
           const merged=[...new Set([...existing,...decoded])];
-          sv("roster",merged);
+          svT("roster",merged);
           // Also grab sheet link if included
           const sh=params.get("sheet");
-          if(sh){sv("sheet_link",sh)}
+          if(sh){svT("sheet_link",sh)}
           // Also grab sync URL if included
           const sy=params.get("sync");
-          if(sy){sv("sync_url",sy)}
+          if(sy){svT("sync_url",sy)}
           // Clean URL without reloading
           window.history.replaceState({},"",window.location.pathname);
           return merged}}}catch(e){}
-    return ld("roster",[])});
+    return ldT("roster",[])});
   const [lineup,setLineup]=useState([]);
   const [opp,setOpp]=useState("");const [gNum,setGNum]=useState("");const [gDate,setGDate]=useState(new Date().toISOString().slice(0,10));
   const [field,setField]=useState("");const [isHome,setIsHome]=useState(true);const [newP,setNewP]=useState("");
-  const [dragI,setDragI]=useState(null);const [rmConf,setRmConf]=useState(null);const [renameConf,setRenameConf]=useState(null);
+  const [dragI,setDragI]=useState(null);const [rmConf,setRmConf]=useState(null);const [renameConf,setRenameConf]=useState(null);const [teamMenu,setTeamMenu]=useState(false);
   // Rename a player everywhere locally — roster, lineup, and every past game's
   // lineup + plays (batter, who scored, fielder's-choice runner). Stats are
   // computed from these, so all history carries over under the new name.
@@ -1109,30 +1207,30 @@ function App(){
   const [awardDate,setAwardDate]=useState(null);
   const [showShare,setShowShare]=useState(false);
   const [copied,setCopied]=useState(false);
-  const [sheetLink,setSheetLink]=useState(()=>ld("sheet_link",""));
+  const [sheetLink,setSheetLink]=useState(()=>ldT("sheet_link",""));
 
   const shareUrl=()=>{const base=window.location.origin+window.location.pathname;
-    let u=base+"?roster="+encodeURIComponent(JSON.stringify(roster));
+    let u=base+"?roster="+encodeURIComponent(JSON.stringify(roster))+"&team="+encodeURIComponent(TEAM);
     if(sheetLink)u+="&sheet="+encodeURIComponent(sheetLink);
-    const syncU=ld("sync_url","");
+    const syncU=ldT("sync_url","");
     if(syncU)u+="&sync="+encodeURIComponent(syncU);
     return u};
   // View-only stats link with the sync URL baked in, so teammates need no prior setup
-  const statsShareUrl=()=>window.location.origin+window.location.pathname+"?view=stats&sync="+encodeURIComponent(ld("sync_url",""));
+  const statsShareUrl=()=>window.location.origin+window.location.pathname+"?view=stats&team="+encodeURIComponent(TEAM)+"&sync="+encodeURIComponent(ldT("sync_url",""));
   const copyShare=()=>{navigator.clipboard.writeText(shareUrl()).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2000)}).catch(()=>{
     // Fallback for older browsers
     const ta=document.createElement("textarea");ta.value=shareUrl();document.body.appendChild(ta);ta.select();document.execCommand("copy");document.body.removeChild(ta);
     setCopied(true);setTimeout(()=>setCopied(false),2000)})};
 
-  useEffect(()=>{sv("games",games)},[games]);
-  useEffect(()=>{sv("roster",roster)},[roster]);
+  useEffect(()=>{svT("games",games)},[games]);
+  useEffect(()=>{svT("roster",roster)},[roster]);
   // ── Cloud roster sync ──
   // The Google Sheet is the source of truth. Pull it on load (so a scorer you
   // send the link to already has everyone), and push on every add/delete.
   const rosterReady=useRef(false);
   const lastRosterSynced=useRef(null);
   const pushRoster=(list)=>{
-    const syncUrl=ld("sync_url","");
+    const syncUrl=ldT("sync_url","");
     if(!syncUrl)return;
     const j=JSON.stringify(list);
     if(lastRosterSynced.current===j)return; // nothing changed
@@ -1141,7 +1239,7 @@ function App(){
       body:JSON.stringify({action:"save_roster",roster:list})}).catch(()=>{});
   };
   useEffect(()=>{
-    const syncUrl=ld("sync_url","");
+    const syncUrl=ldT("sync_url","");
     if(!syncUrl){rosterReady.current=true;return;}
     fetch(syncUrl+"?action=roster").then(r=>r.json()).then(d=>{
       if(d&&d.status==="ok"){
@@ -1163,7 +1261,7 @@ function App(){
   // A game only goes to Google Sheets when you choose "upload" at save time,
   // or when you hit Sync on the Sync page. Nothing uploads on its own.
   const uploadGame=async(rec)=>{
-    const url=ld("sync_url","");if(!url)return false;
+    const url=ldT("sync_url","");if(!url)return false;
     try{
       const r=await fetch(url,{method:"POST",headers:{"Content-Type":"text/plain"},body:JSON.stringify({action:"sync_all",games:[rec]})});
       const d=await r.json();
@@ -1171,14 +1269,14 @@ function App(){
     }catch(e){/* offline / backend down — left unsynced, upload later from Sync page */}
     return false;
   };
-  useEffect(()=>{if(sheetLink)sv("sheet_link",sheetLink)},[sheetLink]);
+  useEffect(()=>{if(sheetLink)svT("sheet_link",sheetLink)},[sheetLink]);
   // Continuously snapshot an in-progress game so an idle reload/crash can resume it
   useEffect(()=>{
     if((scr==="scoring"||scr==="summary")&&gd){
-      sv("active_game",{scr,gd,plays,inn,outs,batIdx,bases,lastO,ourS,oppS,waitOpp,hist});
+      svT("active_game",{scr,gd,plays,inn,outs,batIdx,bases,lastO,ourS,oppS,waitOpp,hist});
     }
   },[scr,gd,plays,inn,outs,batIdx,bases,lastO,ourS,oppS,waitOpp,hist]);
-  const clearActive=()=>{try{localStorage.removeItem("md_active_game")}catch(e){}};
+  const clearActive=()=>{try{localStorage.removeItem("md_"+tkey("active_game"))}catch(e){}};
 
   const _lu=(gd&&gd.lineup)?gd.lineup:[];
   const curBat=_lu.length?(_lu[batIdx%_lu.length]||""):"";
@@ -1247,7 +1345,7 @@ function App(){
   if(scr==="detail"&&viewG)return<GameDetail game={viewG} onBack={()=>setScr("history")}/>;
   if(scr==="sync")return<SyncPage games={games} onBack={()=>setScr("setup")} onSynced={ids=>setGames(p=>p.map(g=>ids.includes(g.id)?{...g,synced:true}:g))} sheetLink={sheetLink} setSheetLink={setSheetLink}/>;
   if(scr==="awards"&&awardDate)return<DailyAwards games={games} date={awardDate} onDone={()=>{setAwardDate(null);setScr("setup")}}/>;
-  if(scr==="summary")return<Summary gd={gd} plays={plays} ourS={ourS} oppS={oppS} onSave={saveG} canUpload={!!ld("sync_url","")}/>;
+  if(scr==="summary")return<Summary gd={gd} plays={plays} ourS={ourS} oppS={oppS} onSave={saveG} canUpload={!!ldT("sync_url","")}/>;
 
   if(scr==="scoring"&&gd){
     const BtnStyle=(c)=>({padding:"10px 6px",borderRadius:10,border:"none",cursor:"pointer",background:OC[c],color:"#fff",fontWeight:700,fontSize:11,fontFamily:FM,minWidth:0});
@@ -1396,11 +1494,11 @@ function App(){
           background:"linear-gradient(90deg,transparent,#00e676,#ffd600,#00e676,transparent)",boxShadow:"0 0 12px rgba(0,230,118,.8)"}}/>
         <div style={{position:"relative"}}>
           <div style={{fontSize:13,letterSpacing:6,color:"#FFD600",fontWeight:700,textShadow:"0 0 10px rgba(255,214,0,.55)"}}>● SLO-PITCH ●</div>
-          <div style={{fontFamily:"'Teko',sans-serif",fontWeight:700,fontSize:62,lineHeight:.86,letterSpacing:3,marginTop:6,
+          <div onClick={()=>setTeamMenu(true)} style={{fontFamily:"'Teko',sans-serif",fontWeight:700,fontSize:62,lineHeight:.86,letterSpacing:3,marginTop:6,cursor:"pointer",
             color:"#eafff2",textShadow:"0 0 14px rgba(0,230,118,.85), 0 0 34px rgba(0,230,118,.45)"}}>{TEAM}</div>
-          <div style={{fontSize:12,letterSpacing:5,color:"#7fe9b4",marginTop:2,fontWeight:600}}>STAT TRACKER</div>
+          <div onClick={()=>setTeamMenu(true)} style={{fontSize:11,letterSpacing:3,color:"#7fe9b4",marginTop:4,fontWeight:700,cursor:"pointer",display:"inline-block",padding:"3px 12px",borderRadius:14,border:"1px solid rgba(0,230,118,.4)",background:"rgba(0,0,0,.25)"}}>▾ SWITCH / ADD TEAM</div>
           <div style={{fontSize:9,color:"#5b7a92",marginTop:6,letterSpacing:2,fontFamily:FM}}>{APP_VERSION}</div>
-          {ld("sync_url","")&&(()=>{const pend=games.filter(g=>!g.synced).length;
+          {ldT("sync_url","")&&(()=>{const pend=games.filter(g=>!g.synced).length;
             return(<div style={{display:"inline-flex",alignItems:"center",gap:7,marginTop:12,padding:"5px 14px",borderRadius:20,
               background:"rgba(0,0,0,.35)",border:`1px solid ${pend?"rgba(255,152,0,.5)":"rgba(0,230,118,.5)"}`}}>
               <div style={{width:8,height:8,borderRadius:"50%",background:pend?"#FF9800":"#00e676",boxShadow:`0 0 8px ${pend?"#FF9800":"#00e676"}`}}/>
@@ -1473,7 +1571,8 @@ function App(){
               boxShadow:!canStart?"none":"0 6px 24px rgba(27,94,32,.3)"}}>PLAY BALL</button>
         </React.Fragment>);
       })()}
-      {renameConf&&<RenameModal player={renameConf} roster={roster} onLocalRename={renameLocal} onClose={()=>setRenameConf(null)} syncUrl={ld("sync_url","")}/>}
+      {renameConf&&<RenameModal player={renameConf} roster={roster} onLocalRename={renameLocal} onClose={()=>setRenameConf(null)} syncUrl={ldT("sync_url","")}/>}
+      {teamMenu&&<TeamModal onClose={()=>setTeamMenu(false)}/>}
       {rmConf&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
         <div style={{background:"#f2f6fb",borderRadius:16,padding:24,maxWidth:320,width:"100%",textAlign:"center",boxShadow:"0 20px 60px rgba(0,0,0,.3)"}}>
           <div style={{fontSize:14,fontWeight:600,color:"#333",marginBottom:20}}>Remove {rmConf} from roster?</div>
@@ -1495,7 +1594,7 @@ function App(){
           </div>
 
           {/* Share Stats (view-only) */}
-          {ld("sync_url","")&&<div>
+          {ldT("sync_url","")&&<div>
             <div style={{borderTop:"1px solid #cdd9e6",paddingTop:16,marginBottom:4}}>
               <div style={{fontSize:14,fontWeight:700,color:"#4CAF50"}}>Share Stats (View Only)</div>
               <div style={{fontSize:11,color:"#5e6e82",marginBottom:8}}>Share this link in the group chat. Anyone can view team stats and game history — no editing, no setup needed.</div>
@@ -1553,7 +1652,7 @@ setTimeout(function(){
     msg="The app didn't finish loading. Try a hard reload: fully close this Safari tab and reopen the link. If it persists, clear this site's data: Settings \u2192 Safari \u2192 Advanced \u2192 Website Data.";
   }
   function esc(s){return String(s).replace(/[&<>]/g,function(c){return c==="&"?"&amp;":c==="<"?"&lt;":"&gt;";});}
-  document.body.innerHTML='<div style="max-width:560px;margin:30px auto;padding:22px;font-family:-apple-system,Segoe UI,sans-serif;color:#333;background:#fff;border-radius:14px;border:1px solid #cdd9e6;line-height:1.55"><div style="font-size:18px;font-weight:800;color:#1B5E20;margin-bottom:10px">Mighty Ducks \u2014 couldn\'t start (build 14)</div><pre style="white-space:pre-wrap;font-size:13px;margin:0 0 14px;font-family:inherit">'+esc(msg)+'</pre><button onclick="location.reload()" style="padding:10px 18px;border:none;border-radius:10px;background:#1B5E20;color:#FFD600;font-weight:800;font-size:14px">RELOAD</button></div>';
+  document.body.innerHTML='<div style="max-width:560px;margin:30px auto;padding:22px;font-family:-apple-system,Segoe UI,sans-serif;color:#333;background:#fff;border-radius:14px;border:1px solid #cdd9e6;line-height:1.55"><div style="font-size:18px;font-weight:800;color:#1B5E20;margin-bottom:10px">Mighty Ducks \u2014 couldn\'t start (build 16)</div><pre style="white-space:pre-wrap;font-size:13px;margin:0 0 14px;font-family:inherit">'+esc(msg)+'</pre><button onclick="location.reload()" style="padding:10px 18px;border:none;border-radius:10px;background:#1B5E20;color:#FFD600;font-weight:800;font-size:14px">RELOAD</button></div>';
 },6000);
 </script>
 </body>
