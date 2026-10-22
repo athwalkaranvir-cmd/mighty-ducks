@@ -78,7 +78,7 @@ input{font-family:inherit}
 <div class="hud-c hud-tl"></div><div class="hud-c hud-tr"></div><div class="hud-c hud-bl"></div><div class="hud-c hud-br"></div>
 <script type="text/plain" id="app-src">
 const {useState,useEffect,useRef} = React;
-const APP_VERSION="BUILD 19 (swipe stats + hit log)";
+const APP_VERSION="BUILD 21 (season awards)";
 let TEAM="MIGHTY DUCKS"; // reassigned from the active team below
 const HITS=["1B","2B","3B","HR"];
 const OUTS=["GO","SO","FO","FLO"];
@@ -192,27 +192,40 @@ function statLine(s){
 // Full-roster stat tables, sized to fit a phone with no sideways scrolling.
 // Split into two stacked tables because all 20 columns can't fit one screen.
 function StatsTables({pl,onPlayer}){
-  const th={padding:"8px 2px",color:"#FFD600",fontWeight:800,fontSize:9,whiteSpace:"nowrap",textAlign:"center"};
   // One wide table: player name frozen on the left, every stat scrolls sideways.
+  // Tap any column header to sort by that stat. Default: alphabetical by name.
+  const [sortKey,setSortKey]=useState("name");
+  const [dir,setDir]=useState(1); // 1 = A→Z / high→low per column default
+  // [label, displayFn, sortValueFn]
   const cols=[
-    ["GP",s=>s.G||0],["AB",s=>statLine(s).ab],["R",s=>s.R||0],["H",s=>s.H||0],
-    ["1B",s=>s["1B"]||0],["2B",s=>s["2B"]||0],["3B",s=>s["3B"]||0],["HR",s=>s.HR||0],
-    ["RBI",s=>s.RBI||0],["BB",s=>s.BB||0],["SO",s=>s.SO||0],["GO",s=>s.GO||0],
-    ["FO",s=>s.FO||0],["FLO",s=>s.FLO||0],["SF",s=>s.SF||0],["FC",s=>s.FC||0],
-    ["AVG",s=>{const l=statLine(s);return{v:fmt3(l.avg,l.ab),c:"#1565C0"}}],
-    ["OBP",s=>{const l=statLine(s);return{v:fmt3(l.obp,l.ab),c:"#FF6F00"}}],
-    ["SLG",s=>{const l=statLine(s);return{v:fmt3(l.slg,l.ab),c:"#9C27B0"}}]
+    ["GP",s=>s.G||0,s=>s.G||0],["AB",s=>statLine(s).ab,s=>statLine(s).ab],["R",s=>s.R||0,s=>s.R||0],["H",s=>s.H||0,s=>s.H||0],
+    ["1B",s=>s["1B"]||0,s=>s["1B"]||0],["2B",s=>s["2B"]||0,s=>s["2B"]||0],["3B",s=>s["3B"]||0,s=>s["3B"]||0],["HR",s=>s.HR||0,s=>s.HR||0],
+    ["RBI",s=>s.RBI||0,s=>s.RBI||0],["BB",s=>s.BB||0,s=>s.BB||0],["SO",s=>s.SO||0,s=>s.SO||0],["GO",s=>s.GO||0,s=>s.GO||0],
+    ["FO",s=>s.FO||0,s=>s.FO||0],["FLO",s=>s.FLO||0,s=>s.FLO||0],["SF",s=>s.SF||0,s=>s.SF||0],["FC",s=>s.FC||0,s=>s.FC||0],
+    ["AVG",s=>{const l=statLine(s);return{v:fmt3(l.avg,l.ab),c:"#1565C0"}},s=>statLine(s).avg],
+    ["OBP",s=>{const l=statLine(s);return{v:fmt3(l.obp,l.ab),c:"#FF6F00"}},s=>statLine(s).obp],
+    ["SLG",s=>{const l=statLine(s);return{v:fmt3(l.slg,l.ab),c:"#9C27B0"}},s=>statLine(s).slg]
   ];
+  const clickCol=(key)=>{
+    if(key===sortKey){setDir(d=>-d);return}
+    setSortKey(key);setDir(key==="name"?1:-1); // names A→Z, stats high→low by default
+  };
+  const rows=[...pl].sort((a,b)=>{
+    if(sortKey==="name")return dir*a[0].localeCompare(b[0]);
+    const col=cols.find(c=>c[0]===sortKey);if(!col)return 0;
+    return dir*(col[2](b[1])-col[2](a[1])); // dir=-1 default => high→low
+  });
   const nameW=96;
-  const hCell={padding:"8px 8px",color:"#FFD600",fontWeight:800,fontSize:9,textAlign:"center",whiteSpace:"nowrap"};
-  const nameHead={...hCell,position:"sticky",left:0,zIndex:3,background:"#1B5E20",textAlign:"left",minWidth:nameW,width:nameW,boxShadow:"2px 0 4px rgba(0,0,0,.12)"};
+  const arrow=(key)=>sortKey===key?(dir<0?" ▼":" ▲"):"";
+  const hCell={padding:"8px 8px",color:"#FFD600",fontWeight:800,fontSize:9,textAlign:"center",whiteSpace:"nowrap",cursor:"pointer",userSelect:"none"};
+  const nameHead={...hCell,position:"sticky",left:0,zIndex:3,background:sortKey==="name"?"#2E7D32":"#1B5E20",textAlign:"left",minWidth:nameW,width:nameW,boxShadow:"2px 0 4px rgba(0,0,0,.12)"};
   return(<div>
     <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch",borderRadius:12,border:"1px solid #cdd9e6",background:"#fff"}}>
       <table style={{borderCollapse:"collapse",width:"max-content",minWidth:"100%"}}>
         <thead><tr style={{background:"#1B5E20"}}>
-          <th style={nameHead}>PLAYER</th>
-          {cols.map(c=><th key={c[0]} style={{...hCell,minWidth:38}}>{c[0]}</th>)}</tr></thead>
-        <tbody>{pl.map(([n,s],i)=>{const bg=i%2===0?"#fff":"#edf1f8";
+          <th style={nameHead} onClick={()=>clickCol("name")}>PLAYER{arrow("name")}</th>
+          {cols.map(c=><th key={c[0]} onClick={()=>clickCol(c[0])} style={{...hCell,minWidth:38,background:sortKey===c[0]?"#2E7D32":"transparent"}}>{c[0]}{arrow(c[0])}</th>)}</tr></thead>
+        <tbody>{rows.map(([n,s],i)=>{const bg=i%2===0?"#fff":"#edf1f8";
           return(<tr key={n} style={{background:bg,borderTop:"1px solid #e1e8f2"}}>
             <td onClick={onPlayer?()=>onPlayer(n):undefined}
               style={{position:"sticky",left:0,zIndex:1,background:bg,padding:"8px 8px",fontWeight:700,fontSize:12,minWidth:nameW,width:nameW,
@@ -222,7 +235,7 @@ function StatsTables({pl,onPlayer}){
               return <td key={j} style={{padding:"8px 4px",textAlign:"center",fontSize:11,fontFamily:FM,minWidth:38,
                 color:ob?v.c:"#333",fontWeight:ob?800:400}}>{ob?v.v:v}</td>})}
           </tr>)})}</tbody></table></div>
-    <div style={{fontSize:10,color:"#5e6e82",fontStyle:"italic",marginTop:8}}>← Swipe the stats sideways. {onPlayer?"Tap a player's name for their full profile. ":""}Sorted by batting average.</div>
+    <div style={{fontSize:11,color:"#1B5E20",fontWeight:800,marginTop:8}}>← Swipe sideways to see every stat. Tap any column heading to sort by it.{onPlayer?" Tap a name for the full profile.":""}</div>
   </div>);
 }
 
@@ -414,6 +427,59 @@ function WeeklyMVPSection({lines,note}){
   </div>);
 }
 
+// ─── Season Awards (MLB-style) ───
+function hitStreak(log){
+  const s=(log||[]).slice().sort((a,b)=>(a.date<b.date?-1:a.date>b.date?1:0));
+  let best=0,cur=0;s.forEach(g=>{if((g.H||0)>0){cur++;if(cur>best)best=cur}else cur=0});return best;
+}
+function mvpScore(s){const l=statLine(s);const tb=(s["1B"]||0)+(s["2B"]||0)*2+(s["3B"]||0)*3+(s.HR||0)*4;
+  return (s.H||0)*2+tb*1.5+(s.RBI||0)*2+(s.R||0)*1.5+(s.HR||0)*3+(s.BB||0)*0.5+l.avg*5;}
+function AwardCard({icon,title,name,statLabel,statVal,accent}){
+  if(!name)return null;
+  return(<div style={{background:"linear-gradient(135deg,#0a1422,#12243a)",borderRadius:14,padding:"14px 16px",border:`1px solid ${accent}55`,boxShadow:`inset 0 0 22px ${accent}18`}}>
+    <div style={{display:"flex",alignItems:"center",gap:12}}>
+      <div style={{fontSize:28,lineHeight:1}}>{icon}</div>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontSize:9,letterSpacing:2,fontWeight:800,color:accent}}>{title}</div>
+        <div style={{fontSize:20,fontWeight:900,color:"#eafff2",fontFamily:FM,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{name}</div></div>
+      {statVal!=null&&<div style={{textAlign:"right",flexShrink:0}}>
+        <div style={{fontSize:18,fontWeight:900,color:"#fff",fontFamily:FM}}>{statVal}</div>
+        <div style={{fontSize:8,color:accent,letterSpacing:1}}>{statLabel}</div></div>}
+    </div></div>);
+}
+function SeasonAwards({pl,minG,logFor,note}){
+  if(!pl.length)return(<div style={{textAlign:"center",padding:24,color:"#8b98ac",fontSize:13}}>{note||"No games yet."}</div>);
+  const qual=pl.filter(([,s])=>(s.G||0)>=minG);
+  const top=(arr,val)=>{const a=[...arr].sort((x,y)=>val(y[1])-val(x[1]));return a[0]&&val(a[0][1])>0?a[0]:null;};
+  const topQ=(val)=>{const a=[...qual].sort((x,y)=>val(y[1])-val(x[1]));return a[0]||null;};
+  const mvp=topQ(mvpScore);
+  const champ=topQ(s=>statLine(s).avg);
+  const slug=topQ(s=>statLine(s).obp+statLine(s).slg);
+  const hr=top(pl,s=>s.HR||0);
+  const rbi=top(pl,s=>s.RBI||0);
+  // Hot bat streak
+  let hbName=null,hbVal=0;pl.forEach(([n])=>{const v=hitStreak(logFor?logFor(n):[]);if(v>hbVal){hbVal=v;hbName=n}});
+  // Triple Crown: same player leads AVG, HR, RBI
+  const tc=(champ&&hr&&rbi&&champ[0]===hr[0]&&champ[0]===rbi[0])?champ[0]:null;
+  const anyQual=qual.length>0;
+  return(<div>
+    {tc&&<div style={{background:"linear-gradient(135deg,#7a5c00,#b8860b)",borderRadius:14,padding:"14px 16px",marginBottom:10,textAlign:"center",boxShadow:"0 6px 20px rgba(184,134,11,.35)"}}>
+      <div style={{fontSize:26}}>👑</div>
+      <div style={{fontSize:10,letterSpacing:2,fontWeight:800,color:"#fff3cc"}}>TRIPLE CROWN</div>
+      <div style={{fontSize:22,fontWeight:900,color:"#fff",fontFamily:FM}}>{tc}</div>
+      <div style={{fontSize:10,color:"#fff3cc",marginTop:2}}>Leads the team in AVG, HR and RBI</div></div>}
+    <div style={{display:"grid",gap:8}}>
+      {!anyQual&&<div style={{fontSize:11,color:"#8b98ac",fontStyle:"italic",textAlign:"center",padding:"4px 0"}}>MVP, Batting Champion & Silver Slugger need {minG}+ games to qualify.</div>}
+      <AwardCard icon="🏆" title="SEASON MVP" name={mvp&&mvp[0]} statLabel="AVG" statVal={mvp?fmt3(statLine(mvp[1]).avg,statLine(mvp[1]).ab):null} accent="#FFD600"/>
+      <AwardCard icon="🥇" title="BATTING CHAMPION" name={champ&&champ[0]} statLabel="AVG" statVal={champ?fmt3(statLine(champ[1]).avg,statLine(champ[1]).ab):null} accent="#00e676"/>
+      <AwardCard icon="💥" title="SILVER SLUGGER" name={slug&&slug[0]} statLabel="OPS" statVal={slug?fmt3(statLine(slug[1]).obp+statLine(slug[1]).slg,statLine(slug[1]).ab):null} accent="#9C27B0"/>
+      <AwardCard icon="🚀" title="HOME RUN KING" name={hr&&hr[0]} statLabel="HR" statVal={hr?(hr[1].HR||0):null} accent="#F44336"/>
+      <AwardCard icon="🏏" title="RBI LEADER" name={rbi&&rbi[0]} statLabel="RBI" statVal={rbi?(rbi[1].RBI||0):null} accent="#2196F3"/>
+      {hbVal>=2&&<AwardCard icon="🔥" title="HOT BAT (STREAK)" name={hbName} statLabel="GAMES" statVal={hbVal} accent="#FF9800"/>}
+    </div>
+  </div>);
+}
+
 function StatsPage({games,onBack}){
   const [tab,setTab]=useState("stats");
   const [profile,setProfile]=useState(null);
@@ -483,6 +549,9 @@ function StatsPage({games,onBack}){
         :undefined;
       return <WeeklyMVPSection lines={lines} note={note}/>})():
     <div>
+      <div style={{fontSize:13,fontWeight:900,color:"#1B5E20",letterSpacing:1,marginBottom:10}}>🏆 SEASON AWARDS</div>
+      <SeasonAwards pl={pl} minG={MIN_G} logFor={n=>playerGameLog(games,n)}/>
+      <div style={{fontSize:13,fontWeight:900,color:"#1B5E20",letterSpacing:1,margin:"22px 0 10px"}}>📊 LEADERBOARDS</div>
       <div style={{textAlign:"center",fontSize:11,color:"#5e6e82",marginBottom:12,fontStyle:"italic"}}>Min. {MIN_G} of {totalTeamGames} games (40%) to qualify</div>
       {qualPl.length===0?<div style={{textAlign:"center",padding:30,color:"#8b98ac",fontSize:13}}>No players have reached {MIN_G} games yet.</div>:
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
@@ -574,6 +643,9 @@ function StatsViewer({syncUrl,teamName}){
       note={data.playerGames?"No games yet.":"Weekly MVPs will show once the team admin updates the Google Apps Script and re-syncs."}/>}
 
     {tab==="rankings"&&<div>
+      <div style={{fontSize:13,fontWeight:900,color:"#1B5E20",letterSpacing:1,marginBottom:10}}>🏆 SEASON AWARDS</div>
+      <SeasonAwards pl={pl} minG={MIN_G} logFor={n=>{let l=playerGameLog(data.games||[],n);if(!l.length&&data.playerGames&&data.playerGames[n])l=data.playerGames[n];return l;}}/>
+      <div style={{fontSize:13,fontWeight:900,color:"#1B5E20",letterSpacing:1,margin:"22px 0 10px"}}>📊 LEADERBOARDS</div>
       <div style={{textAlign:"center",fontSize:11,color:"#5e6e82",marginBottom:12,fontStyle:"italic"}}>Min. {MIN_G} of {totalTeamGames} games (40%) to qualify</div>
       {qualPl.length===0?<div style={{textAlign:"center",padding:30,color:"#8b98ac",fontSize:13}}>No players qualified yet.</div>:
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
@@ -695,7 +767,7 @@ function GameDetail({game,onBack}){
   </div>);
 }
 
-function HistoryPage({games,onBack,onView,onDelete}){
+function HistoryPage({games,onBack,onView,onDelete,locked}){
   const [delC,setDelC]=useState(null);
   const [cloudGames,setCloudGames]=useState(null);
   const [loading,setLoading]=useState(false);
@@ -738,7 +810,7 @@ function HistoryPage({games,onBack,onView,onDelete}){
               <div style={{textAlign:"right"}}>
                 <div style={{fontSize:20,fontWeight:900,fontFamily:FM,color:w?"#4CAF50":t?"#FF9800":"#F44336"}}>{oR} - {opR}</div>
                 <div style={{fontSize:10,fontWeight:700,color:w?"#4CAF50":t?"#FF9800":"#F44336"}}>{w?"WIN":t?"TIE":"LOSS"}</div></div></div></button>
-          {g.source==="local"&&<button onClick={e=>{e.stopPropagation();setDelC(g.id||i)}} style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#ccc",cursor:"pointer",fontSize:20,padding:4}}>×</button>}
+          {g.source==="local"&&!locked&&<button onClick={e=>{e.stopPropagation();setDelC(g.id||i)}} style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#ccc",cursor:"pointer",fontSize:20,padding:4}}>×</button>}
         </div>)})}
     {delC!==null&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div style={{background:"#f2f6fb",borderRadius:16,padding:24,maxWidth:320,width:"100%",textAlign:"center",boxShadow:"0 20px 60px rgba(0,0,0,.3)"}}>
@@ -1119,7 +1191,50 @@ function RenameModal({player,roster,onLocalRename,onClose,syncUrl}){
   </div>);
 }
 
-function TeamModal({onClose}){
+function LockModal({locked,setLocked,onClose}){
+  const pin=ld("owner_pin","");
+  const [mode,setMode]=useState(pin?(locked?"unlock":"status"):"set");
+  const [a,setA]=useState("");const [b,setB]=useState("");const [err,setErr]=useState("");
+  const box={position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:1300,display:"flex",alignItems:"center",justifyContent:"center",padding:18};
+  const card={background:"#f2f6fb",borderRadius:16,padding:22,maxWidth:340,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,.4)"};
+  const field={width:"100%",padding:"12px",borderRadius:10,border:"1px solid #cdd9e6",fontSize:18,letterSpacing:4,textAlign:"center",background:"#fff",outline:"none",marginBottom:10,boxSizing:"border-box"};
+  const prim={width:"100%",padding:12,borderRadius:10,border:"none",background:"#1B5E20",color:"#FFD600",fontWeight:800,cursor:"pointer",marginBottom:8};
+  const sec={width:"100%",padding:11,borderRadius:10,border:"2px solid #7e93b2",background:"transparent",color:"#5e6e82",fontWeight:700,cursor:"pointer"};
+  const numInput={inputMode:"numeric",pattern:"[0-9]*",maxLength:8};
+  const setPin=()=>{if(a.length<4){setErr("Use at least 4 digits.");return}if(a!==b){setErr("The two PINs don't match.");return}sv("owner_pin",a);setLocked(true);onClose();};
+  const doUnlock=()=>{if(a===pin){setLocked(false);onClose();}else setErr("Wrong PIN.");};
+  const removePin=()=>{if(a===pin){sv("owner_pin","");setLocked(false);onClose();}else setErr("Wrong PIN.");};
+  return(<div style={box}><div style={card}>
+    {mode==="set"?<React.Fragment>
+      <div style={{fontSize:16,fontWeight:800,color:"#1B5E20",marginBottom:4}}>Set an edit PIN</div>
+      <div style={{fontSize:12,color:"#5e6e82",marginBottom:14,lineHeight:1.5}}>Once set, renaming or deleting teams, players and games needs this PIN — so nobody (including a mis-tap) can change your history by accident.</div>
+      <input {...numInput} value={a} onChange={e=>setA(e.target.value.replace(/\D/g,""))} placeholder="New PIN" style={field}/>
+      <input {...numInput} value={b} onChange={e=>setB(e.target.value.replace(/\D/g,""))} placeholder="Confirm PIN" style={field}/>
+      {err&&<div style={{fontSize:12,color:"#F44336",fontWeight:700,marginBottom:8}}>{err}</div>}
+      <button style={prim} onClick={setPin}>SET PIN & LOCK</button>
+      <button style={sec} onClick={onClose}>Cancel</button>
+    </React.Fragment>:mode==="unlock"?<React.Fragment>
+      <div style={{fontSize:16,fontWeight:800,color:"#1B5E20",marginBottom:4}}>🔒 Edits locked</div>
+      <div style={{fontSize:12,color:"#5e6e82",marginBottom:14}}>Enter your PIN to make changes.</div>
+      <input {...numInput} autoFocus value={a} onChange={e=>setA(e.target.value.replace(/\D/g,""))} onKeyDown={e=>{if(e.key==="Enter")doUnlock()}} placeholder="PIN" style={field}/>
+      {err&&<div style={{fontSize:12,color:"#F44336",fontWeight:700,marginBottom:8}}>{err}</div>}
+      <button style={prim} onClick={doUnlock}>UNLOCK</button>
+      <button style={sec} onClick={onClose}>Cancel</button>
+    </React.Fragment>:<React.Fragment>
+      <div style={{fontSize:16,fontWeight:800,color:"#1B5E20",marginBottom:4}}>🔓 Edits unlocked</div>
+      <div style={{fontSize:12,color:"#5e6e82",marginBottom:14}}>You can rename and delete right now. Lock again when you're done.</div>
+      <button style={prim} onClick={()=>{setLocked(true);onClose();}}>LOCK EDITS NOW</button>
+      {mode!=="remove"?<button style={sec} onClick={()=>{setErr("");setA("");setMode("remove")}}>Remove PIN entirely</button>:
+        <div style={{marginTop:10}}>
+          <input {...numInput} value={a} onChange={e=>setA(e.target.value.replace(/\D/g,""))} placeholder="Current PIN to remove" style={field}/>
+          {err&&<div style={{fontSize:12,color:"#F44336",fontWeight:700,marginBottom:8}}>{err}</div>}
+          <button style={{...prim,background:"#F44336",color:"#fff"}} onClick={removePin}>Remove PIN</button></div>}
+      <button style={{...sec,marginTop:8}} onClick={onClose}>Close</button>
+    </React.Fragment>}
+  </div></div>);
+}
+
+function TeamModal({onClose,locked,onNeedUnlock}){
   const teams=ld("teams",[]);const activeId=ld("active_team","");
   const [mode,setMode]=useState("list");
   const [val,setVal]=useState("");
@@ -1141,12 +1256,13 @@ function TeamModal({onClose}){
     {mode==="list"?<React.Fragment>
       <div style={{fontSize:16,fontWeight:800,color:"#1B5E20",marginBottom:4}}>Your teams</div>
       <div style={{fontSize:11,color:"#5e6e82",marginBottom:14}}>Each team keeps its own games, roster and Sheet.</div>
+      {locked&&<div onClick={onNeedUnlock} style={{fontSize:11,fontWeight:700,color:"#E65100",background:"#FFF3E0",border:"1px solid #FFB74D",borderRadius:10,padding:"9px 12px",marginBottom:12,cursor:"pointer"}}>🔒 Renaming & deleting are locked. Tap to unlock with your PIN.</div>}
       {teams.map(t=>(<div key={t.id} style={{display:"flex",alignItems:"center",gap:6,marginBottom:8}}>
         <button onClick={()=>{if(t.id!==activeId)switchTeam(t.id);else onClose()}} style={{flex:1,textAlign:"left",padding:"11px 14px",borderRadius:10,cursor:"pointer",fontWeight:800,fontSize:14,
           border:t.id===activeId?"2px solid #1B5E20":"1px solid #cdd9e6",background:t.id===activeId?"#e8f5e9":"#fff",color:"#1B5E20"}}>
           {t.name}{t.id===activeId?"  ✓":""}</button>
-        <button onClick={()=>{setRenameId(t.id);setVal(t.name);setMode("rename")}} title="Rename" style={{padding:"9px 11px",borderRadius:9,border:"1px solid #cdd9e6",background:"#fff",color:"#5e6e82",cursor:"pointer",fontSize:13}}>✎</button>
-        {teams.length>1&&<button onClick={()=>setDelConf(t)} title="Delete" style={{padding:"9px 11px",borderRadius:9,border:"1px solid #f3c0c0",background:"#fff",color:"#F44336",cursor:"pointer",fontSize:13}}>✕</button>}
+        {!locked&&<button onClick={()=>{setRenameId(t.id);setVal(t.name);setMode("rename")}} title="Rename" style={{padding:"9px 11px",borderRadius:9,border:"1px solid #cdd9e6",background:"#fff",color:"#5e6e82",cursor:"pointer",fontSize:13}}>✎</button>}
+        {!locked&&teams.length>1&&<button onClick={()=>setDelConf(t)} title="Delete" style={{padding:"9px 11px",borderRadius:9,border:"1px solid #f3c0c0",background:"#fff",color:"#F44336",cursor:"pointer",fontSize:13}}>✕</button>}
       </div>))}
       <button onClick={()=>{setVal("");setMode("add")}} style={{width:"100%",padding:12,borderRadius:10,border:"2px dashed #1B5E20",background:"transparent",color:"#1B5E20",fontWeight:800,cursor:"pointer",marginTop:4}}>+ ADD A TEAM</button>
       <button onClick={onClose} style={{width:"100%",padding:11,borderRadius:10,border:"none",background:"#dce5f0",color:"#5e6e82",fontWeight:700,cursor:"pointer",marginTop:10}}>Close</button>
@@ -1219,6 +1335,10 @@ function App(){
   const [opp,setOpp]=useState("");const [gNum,setGNum]=useState("");const [gDate,setGDate]=useState(new Date().toISOString().slice(0,10));
   const [field,setField]=useState("");const [isHome,setIsHome]=useState(true);const [newP,setNewP]=useState("");
   const [dragI,setDragI]=useState(null);const [rmConf,setRmConf]=useState(null);const [renameConf,setRenameConf]=useState(null);const [teamMenu,setTeamMenu]=useState(false);
+  // Owner edit-lock: when a PIN is set and locked, rename/delete controls are hidden
+  const [locked,setLocked]=useState(()=>{const p=ld("owner_pin","");return p?ld("edits_locked",true):false;});
+  const [showLock,setShowLock]=useState(false);
+  useEffect(()=>{sv("edits_locked",locked)},[locked]);
   // Rename a player everywhere locally — roster, lineup, and every past game's
   // lineup + plays (batter, who scored, fielder's-choice runner). Stats are
   // computed from these, so all history carries over under the new name.
@@ -1374,7 +1494,7 @@ function App(){
   const addLatePlayer=n=>{if(n&&gd){const newLu=[...gd.lineup,n];setGd({...gd,lineup:newLu});if(!roster.includes(n))setRoster(p=>[...p,n])}};
 
   if(scr==="stats")return<StatsPage games={games} onBack={()=>setScr("setup")}/>;
-  if(scr==="history")return<HistoryPage games={games} onBack={()=>setScr("setup")} onView={g=>{setViewG(g);setScr("detail")}} onDelete={id=>setGames(p=>p.filter(g=>(g.id||0)!==id))}/>;
+  if(scr==="history")return<HistoryPage games={games} onBack={()=>setScr("setup")} onView={g=>{setViewG(g);setScr("detail")}} onDelete={id=>setGames(p=>p.filter(g=>(g.id||0)!==id))} locked={locked}/>;
   if(scr==="detail"&&viewG)return<GameDetail game={viewG} onBack={()=>setScr("history")}/>;
   if(scr==="sync")return<SyncPage games={games} onBack={()=>setScr("setup")} onSynced={ids=>setGames(p=>p.map(g=>ids.includes(g.id)?{...g,synced:true}:g))} sheetLink={sheetLink} setSheetLink={setSheetLink}/>;
   if(scr==="awards"&&awardDate)return<DailyAwards games={games} date={awardDate} onDone={()=>{setAwardDate(null);setScr("setup")}}/>;
@@ -1529,7 +1649,10 @@ function App(){
           <div style={{fontSize:13,letterSpacing:6,color:"#FFD600",fontWeight:700,textShadow:"0 0 10px rgba(255,214,0,.55)"}}>● SLO-PITCH ●</div>
           <div onClick={()=>setTeamMenu(true)} style={{fontFamily:"'Teko',sans-serif",fontWeight:700,fontSize:62,lineHeight:.86,letterSpacing:3,marginTop:6,cursor:"pointer",
             color:"#eafff2",textShadow:"0 0 14px rgba(0,230,118,.85), 0 0 34px rgba(0,230,118,.45)"}}>{TEAM}</div>
-          <div onClick={()=>setTeamMenu(true)} style={{fontSize:11,letterSpacing:3,color:"#7fe9b4",marginTop:4,fontWeight:700,cursor:"pointer",display:"inline-block",padding:"3px 12px",borderRadius:14,border:"1px solid rgba(0,230,118,.4)",background:"rgba(0,0,0,.25)"}}>▾ SWITCH / ADD TEAM</div>
+          <div style={{display:"flex",gap:6,justifyContent:"center",flexWrap:"wrap",marginTop:4}}>
+            <div onClick={()=>setTeamMenu(true)} style={{fontSize:11,letterSpacing:2,color:"#7fe9b4",fontWeight:700,cursor:"pointer",padding:"3px 12px",borderRadius:14,border:"1px solid rgba(0,230,118,.4)",background:"rgba(0,0,0,.25)"}}>▾ SWITCH / ADD TEAM</div>
+            <div onClick={()=>setShowLock(true)} style={{fontSize:11,letterSpacing:1,color:locked?"#FFB74D":"#7fe9b4",fontWeight:700,cursor:"pointer",padding:"3px 12px",borderRadius:14,border:`1px solid ${locked?"rgba(255,152,0,.5)":"rgba(0,230,118,.4)"}`,background:"rgba(0,0,0,.25)"}}>{ld("owner_pin","")?(locked?"🔒 LOCKED":"🔓 UNLOCKED"):"🔒 SET EDIT PIN"}</div>
+          </div>
           <div style={{fontSize:9,color:"#5b7a92",marginTop:6,letterSpacing:2,fontFamily:FM}}>{APP_VERSION}</div>
           {ldT("sync_url","")&&(()=>{const pend=games.filter(g=>!g.synced).length;
             return(<div style={{display:"inline-flex",alignItems:"center",gap:7,marginTop:12,padding:"5px 14px",borderRadius:20,
@@ -1580,8 +1703,8 @@ function App(){
                 border:inL?"1px solid #C8E6C9":"1px solid #7e93b2",background:inL?"#e8f5e9":"transparent",
                 color:inL?"#81C784":"#33414f",fontSize:12,fontWeight:600,cursor:inL?"default":"pointer",paddingRight:46}}>
                 {n}{inL?" ✓":""}</button>
-              <button onClick={()=>setRenameConf(n)} title="Rename" style={{position:"absolute",right:24,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#7e93b2",cursor:"pointer",fontSize:12,lineHeight:1}}>✎</button>
-              <button onClick={()=>setRmConf(n)} style={{position:"absolute",right:4,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#ccc",cursor:"pointer",fontSize:14,lineHeight:1}}>×</button></div>)})}</div></div>}
+              {!locked&&<button onClick={()=>setRenameConf(n)} title="Rename" style={{position:"absolute",right:24,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#7e93b2",cursor:"pointer",fontSize:12,lineHeight:1}}>✎</button>}
+              {!locked&&<button onClick={()=>setRmConf(n)} style={{position:"absolute",right:4,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#ccc",cursor:"pointer",fontSize:14,lineHeight:1}}>×</button>}</div>)})}</div></div>}
         <div style={{display:"flex",gap:8,marginTop:14}}>
           <input value={newP} onChange={e=>setNewP(e.target.value)} placeholder="Add new player" style={{flex:1,padding:"8px 12px",borderRadius:8,border:"1px solid #cdd9e6",fontSize:13,background:"#fff",outline:"none"}}
             onKeyDown={e=>{if(e.key==="Enter"&&newP.trim()){addP(newP.trim());setNewP("")}}}/>
@@ -1605,7 +1728,8 @@ function App(){
         </React.Fragment>);
       })()}
       {renameConf&&<RenameModal player={renameConf} roster={roster} onLocalRename={renameLocal} onClose={()=>setRenameConf(null)} syncUrl={ldT("sync_url","")}/>}
-      {teamMenu&&<TeamModal onClose={()=>setTeamMenu(false)}/>}
+      {teamMenu&&<TeamModal onClose={()=>setTeamMenu(false)} locked={locked} onNeedUnlock={()=>{setTeamMenu(false);setShowLock(true)}}/>}
+      {showLock&&<LockModal locked={locked} setLocked={setLocked} onClose={()=>setShowLock(false)}/>}
       {rmConf&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
         <div style={{background:"#f2f6fb",borderRadius:16,padding:24,maxWidth:320,width:"100%",textAlign:"center",boxShadow:"0 20px 60px rgba(0,0,0,.3)"}}>
           <div style={{fontSize:14,fontWeight:600,color:"#333",marginBottom:20}}>Remove {rmConf} from roster?</div>
@@ -1685,7 +1809,7 @@ setTimeout(function(){
     msg="The app didn't finish loading. Try a hard reload: fully close this Safari tab and reopen the link. If it persists, clear this site's data: Settings \u2192 Safari \u2192 Advanced \u2192 Website Data.";
   }
   function esc(s){return String(s).replace(/[&<>]/g,function(c){return c==="&"?"&amp;":c==="<"?"&lt;":"&gt;";});}
-  document.body.innerHTML='<div style="max-width:560px;margin:30px auto;padding:22px;font-family:-apple-system,Segoe UI,sans-serif;color:#333;background:#fff;border-radius:14px;border:1px solid #cdd9e6;line-height:1.55"><div style="font-size:18px;font-weight:800;color:#1B5E20;margin-bottom:10px">Mighty Ducks \u2014 couldn\'t start (build 19)</div><pre style="white-space:pre-wrap;font-size:13px;margin:0 0 14px;font-family:inherit">'+esc(msg)+'</pre><button onclick="location.reload()" style="padding:10px 18px;border:none;border-radius:10px;background:#1B5E20;color:#FFD600;font-weight:800;font-size:14px">RELOAD</button></div>';
+  document.body.innerHTML='<div style="max-width:560px;margin:30px auto;padding:22px;font-family:-apple-system,Segoe UI,sans-serif;color:#333;background:#fff;border-radius:14px;border:1px solid #cdd9e6;line-height:1.55"><div style="font-size:18px;font-weight:800;color:#1B5E20;margin-bottom:10px">Mighty Ducks \u2014 couldn\'t start (build 21)</div><pre style="white-space:pre-wrap;font-size:13px;margin:0 0 14px;font-family:inherit">'+esc(msg)+'</pre><button onclick="location.reload()" style="padding:10px 18px;border:none;border-radius:10px;background:#1B5E20;color:#FFD600;font-weight:800;font-size:14px">RELOAD</button></div>';
 },6000);
 </script>
 </body>
