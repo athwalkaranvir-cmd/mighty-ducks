@@ -18,7 +18,7 @@ window.addEventListener("unhandledrejection",function(e){try{window.__bootErrors
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#1B5E20">
-<title>Mighty Ducks Stat Tracker</title>
+<title>Stat Tracker</title>
 <link href="https://fonts.googleapis.com/css2?family=Fira+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Teko:wght@500;600;700&display=swap');
@@ -78,7 +78,7 @@ input{font-family:inherit}
 <div class="hud-c hud-tl"></div><div class="hud-c hud-tr"></div><div class="hud-c hud-bl"></div><div class="hud-c hud-br"></div>
 <script type="text/plain" id="app-src">
 const {useState,useEffect,useRef} = React;
-const APP_VERSION="BUILD 23 (edit completed games)";
+const APP_VERSION="BUILD 24 (dynamic title)";
 let TEAM="MIGHTY DUCKS"; // reassigned from the active team below
 const HITS=["1B","2B","3B","HR"];
 const OUTS=["GO","SO","FO","FLO"];
@@ -108,6 +108,7 @@ let TEAMS=migrateTeams();
 let TEAM_ID=ld("active_team",(TEAMS[0]||{}).id);
 if(!TEAMS.some(function(t){return t.id===TEAM_ID})){TEAM_ID=(TEAMS[0]||{}).id;sv("active_team",TEAM_ID);}
 TEAM=((TEAMS.find(function(t){return t.id===TEAM_ID}))||{name:"MY TEAM"}).name;
+try{document.title=TEAM+" Stat Tracker"}catch(e){}
 const tkey=k=>"t_"+TEAM_ID+"_"+k;            // key within the active team
 const ldT=(k,d)=>ld(tkey(k),d);
 const svT=(k,v)=>sv(tkey(k),v);
@@ -1401,6 +1402,7 @@ function App(){
     // link's team name. Old links with no team= fall back to a generic label
     // instead of defaulting to whatever team happens to be on the viewer's phone.
     TEAM=urlTeam||"TEAM STATS";
+    try{document.title=(urlTeam?urlTeam+" ":"")+"Stat Tracker"}catch(e){}
     return <StatsViewer syncUrl={syncUrl} teamName={TEAM} showAwards={params.get("awards")!=="0"}/>;
   }
 
@@ -1911,7 +1913,7 @@ setTimeout(function(){
     msg="The app didn't finish loading. Try a hard reload: fully close this Safari tab and reopen the link. If it persists, clear this site's data: Settings \u2192 Safari \u2192 Advanced \u2192 Website Data.";
   }
   function esc(s){return String(s).replace(/[&<>]/g,function(c){return c==="&"?"&amp;":c==="<"?"&lt;":"&gt;";});}
-  document.body.innerHTML='<div style="max-width:560px;margin:30px auto;padding:22px;font-family:-apple-system,Segoe UI,sans-serif;color:#333;background:#fff;border-radius:14px;border:1px solid #cdd9e6;line-height:1.55"><div style="font-size:18px;font-weight:800;color:#1B5E20;margin-bottom:10px">Mighty Ducks \u2014 couldn\'t start (build 23)</div><pre style="white-space:pre-wrap;font-size:13px;margin:0 0 14px;font-family:inherit">'+esc(msg)+'</pre><button onclick="location.reload()" style="padding:10px 18px;border:none;border-radius:10px;background:#1B5E20;color:#FFD600;font-weight:800;font-size:14px">RELOAD</button></div>';
+  document.body.innerHTML='<div style="max-width:560px;margin:30px auto;padding:22px;font-family:-apple-system,Segoe UI,sans-serif;color:#333;background:#fff;border-radius:14px;border:1px solid #cdd9e6;line-height:1.55"><div style="font-size:18px;font-weight:800;color:#1B5E20;margin-bottom:10px">Stat Tracker \u2014 couldn\'t start (build 24)</div><pre style="white-space:pre-wrap;font-size:13px;margin:0 0 14px;font-family:inherit">'+esc(msg)+'</pre><button onclick="location.reload()" style="padding:10px 18px;border:none;border-radius:10px;background:#1B5E20;color:#FFD600;font-weight:800;font-size:14px">RELOAD</button></div>';
 },6000);
 </script>
 </body>
