@@ -57,7 +57,7 @@ input{font-family:inherit}
 <div class="hud-c hud-tl"></div><div class="hud-c hud-tr"></div><div class="hud-c hud-bl"></div><div class="hud-c hud-br"></div>
 <script type="text/plain" id="app-src">
 const {useState,useEffect,useRef} = React;
-const APP_VERSION="BUILD 38 (live fielding + positions)";
+const APP_VERSION="BUILD 39 (team switch fix)";
 let TEAM="MIGHTY DUCKS"; // reassigned from the active team below
 const HITS=["1B","2B","3B","HR"];
 const OUTS=["GO","SO","FO","FLO"];
@@ -782,7 +782,7 @@ function StatsPage({games,onBack}){
     setLoading(true);
     fetch(syncUrl+"?action=stats").then(r=>r.json()).then(d=>{
       if(d.status==="ok"&&d.players&&Object.keys(d.players).length>0){
-        setCloud(d.players);setSource("cloud");
+        setCloud(d.players);/* stay on this team's own data by default; cloud is opt-in via the toggle */
         if(d.playerGames)setCloudPG(d.playerGames);
         // Total team games = count from game log
         if(d.games)setCloudGameCount(d.games.length);
@@ -821,11 +821,11 @@ function StatsPage({games,onBack}){
       {[["stats","Full Stats"],["weekly","Weekly MVP"],["rankings","Rankings"]].map(([t,lbl])=><button key={t} onClick={()=>setTab(t)} style={{flex:1,padding:"9px 4px",borderRadius:11,border:"none",cursor:"pointer",fontSize:12.5,
         background:tab===t?"#15502f":"transparent",color:tab===t?"#fff":"#6b7563",fontWeight:700}}>{lbl}</button>)}</div>
     {loading&&<div style={{textAlign:"center",padding:12,color:"#5e6e82",fontSize:12}}>Loading stats from Google Sheets...</div>}
-    {!loading&&cloud&&<div style={{display:"flex",justifyContent:"center",gap:8,marginBottom:12}}>
-      <button onClick={()=>setSource("cloud")} style={{padding:"4px 12px",borderRadius:6,border:"none",cursor:"pointer",fontSize:10,fontWeight:700,
-        background:source==="cloud"?"#4CAF50":"#e8f5e9",color:source==="cloud"?"#fff":"#4CAF50"}}>Google Sheets (Live)</button>
-      <button onClick={()=>setSource("local")} style={{padding:"4px 12px",borderRadius:6,border:"none",cursor:"pointer",fontSize:10,fontWeight:700,
-        background:source==="local"?"#1B5E20":"#e8f5e9",color:source==="local"?"#F2C94C":"#1B5E20"}}>Local (This Device)</button>
+    {!loading&&cloud&&<div style={{display:"flex",background:"#ece7d8",borderRadius:12,padding:3,marginBottom:14}}>
+      <button onClick={()=>setSource("local")} style={{flex:1,padding:"7px 4px",borderRadius:9,border:"none",cursor:"pointer",fontSize:12,fontWeight:700,
+        background:source==="local"?"#15502f":"transparent",color:source==="local"?"#fff":"#6b7563"}}>This team</button>
+      <button onClick={()=>setSource("cloud")} style={{flex:1,padding:"7px 4px",borderRadius:9,border:"none",cursor:"pointer",fontSize:12,fontWeight:700,
+        background:source==="cloud"?"#15502f":"transparent",color:source==="cloud"?"#fff":"#6b7563"}}>Google Sheets</button>
     </div>}
     {pl.length===0?<div style={{textAlign:"center",padding:40,color:"#8b98ac"}}>No games yet.</div>:
     tab==="stats"?(<React.Fragment>
@@ -1203,6 +1203,7 @@ function HistoryPage({games,onBack,onView,onDelete,locked}){
   const [delC,setDelC]=useState(null);
   const [cloudGames,setCloudGames]=useState(null);
   const [loading,setLoading]=useState(false);
+  const [showCloud,setShowCloud]=useState(false);// Google Sheets games are opt-in so switching teams always shows this team's own games
 
   useEffect(()=>{
     const syncUrl=ldT("sync_url","");
@@ -1213,21 +1214,25 @@ function HistoryPage({games,onBack,onView,onDelete,locked}){
       setLoading(false)}).catch(()=>setLoading(false));
   },[]);
 
-  // Merge local and cloud games, deduplicate by date+opponent+gameNum
+  // This team's own games first (full play data). Cloud games are merged only when the user opts in.
   const allGames=[];
   const seen=new Set();
-  // Local games first (have full play data)
   games.forEach(g=>{const key=(g.date||"")+"_"+(g.opponent||"")+"_"+(g.gameNum||"");seen.add(key);allGames.push({...g,source:"local"})});
-  // Cloud games that aren't already local
-  if(cloudGames){cloudGames.forEach(g=>{const key=(g.date||"")+"_"+(g.opponent||"")+"_"+(g.gameNum||"");
+  if(cloudGames&&showCloud){cloudGames.forEach(g=>{const key=(g.date||"")+"_"+(g.opponent||"")+"_"+(g.gameNum||"");
     if(!seen.has(key)){seen.add(key);allGames.push({date:g.date,opponent:g.opponent,gameNum:g.gameNum,field:g.field,
       isHome:g.homeAway==="HOME",ourScoreByInning:{1:g.ourScore||0},oppScoreByInning:{1:g.oppScore||0},
       result:g.result,source:"cloud"})}})}
 
   return(<div style={{maxWidth:480,margin:"0 auto",padding:20}}>
-    <button onClick={onBack} style={{padding:"6px 14px",borderRadius:8,border:"2px solid #1B5E20",background:"transparent",color:"#1B5E20",fontSize:12,fontWeight:700,cursor:"pointer",marginBottom:16}}>BACK</button>
-    <div style={{textAlign:"center",marginBottom:20}}><div style={{fontSize:22,fontWeight:900,color:"#1B5E20",fontFamily:FM}}>GAME HISTORY</div></div>
-    {loading&&<div style={{textAlign:"center",padding:12,color:"#5e6e82",fontSize:12}}>Loading from Google Sheets...</div>}
+    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+      <button onClick={onBack} aria-label="Back" style={{background:"none",border:"none",cursor:"pointer",color:"#14532d",padding:0,fontSize:24,lineHeight:1}}>‹</button>
+      <span style={{fontSize:14,fontWeight:700,color:"#14532d",textTransform:"uppercase",letterSpacing:.2}}>{TEAM}</span></div>
+    <div style={{fontSize:28,fontWeight:800,color:"#14532d",letterSpacing:-.5,marginBottom:16}}>Games</div>
+    {cloudGames&&<div style={{display:"flex",background:"#ece7d8",borderRadius:12,padding:3,marginBottom:14}}>
+      <button onClick={()=>setShowCloud(false)} style={{flex:1,padding:"7px 4px",borderRadius:9,border:"none",cursor:"pointer",fontSize:12,fontWeight:700,background:!showCloud?"#15502f":"transparent",color:!showCloud?"#fff":"#6b7563"}}>This team</button>
+      <button onClick={()=>setShowCloud(true)} style={{flex:1,padding:"7px 4px",borderRadius:9,border:"none",cursor:"pointer",fontSize:12,fontWeight:700,background:showCloud?"#15502f":"transparent",color:showCloud?"#fff":"#6b7563"}}>+ Google Sheets</button>
+    </div>}
+    {loading&&<div style={{textAlign:"center",padding:12,color:"#8a9079",fontSize:12}}>Loading from Google Sheets…</div>}
     {allGames.length===0&&!loading?<div style={{textAlign:"center",padding:40,color:"#8b98ac"}}>No games yet.</div>:
       allGames.slice().reverse().map((g,i)=>{
         const oR=g.source==="cloud"?(g.ourScoreByInning?Object.values(g.ourScoreByInning).reduce((a,b)=>a+b,0):0):Object.values(g.ourScoreByInning||{}).reduce((a,b)=>a+b,0);
