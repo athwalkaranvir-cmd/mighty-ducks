@@ -57,7 +57,7 @@ input{font-family:inherit}
 <div class="hud-c hud-tl"></div><div class="hud-c hud-tr"></div><div class="hud-c hud-bl"></div><div class="hud-c hud-br"></div>
 <script type="text/plain" id="app-src">
 const {useState,useEffect,useRef} = React;
-const APP_VERSION="BUILD 37 (shared view redesign)";
+const APP_VERSION="BUILD 38 (live fielding + positions)";
 let TEAM="MIGHTY DUCKS"; // reassigned from the active team below
 const HITS=["1B","2B","3B","HR"];
 const OUTS=["GO","SO","FO","FLO"];
@@ -400,6 +400,41 @@ function fieldSvgKids(){return(<React.Fragment>
   {[[146,116],[100,74],[54,116]].map((p,i)=><rect key={i} x={p[0]-3} y={p[1]-3} width="6" height="6" transform={`rotate(45 ${p[0]} ${p[1]})`} fill="#f0e9d8"/>)}
   <path d="M95,159 h10 v4 l-5,3 l-5,-3 z" fill="#f0e9d8"/>
 </React.Fragment>);}
+// ── Defensive positions: where our fielders stand, so errors attach to the right person ──
+const POS={
+  P:{x:100,y:121,label:"P"},C:{x:100,y:169,label:"C"},
+  "1B":{x:148,y:104,label:"1B"},"2B":{x:123,y:88,label:"2B"},SS:{x:77,y:88,label:"SS"},"3B":{x:52,y:104,label:"3B"},
+  LF:{x:40,y:50,label:"LF"},LC:{x:78,y:32,label:"LC"},RC:{x:122,y:32,label:"RC"},RF:{x:160,y:50,label:"RF"},
+  CF:{x:100,y:30,label:"CF"},ROV:{x:100,y:64,label:"ROV"}
+};
+const FORMATIONS={
+  slo10:{name:"10 · 4 outfield",keys:["P","C","1B","2B","SS","3B","LF","LC","RC","RF"]},
+  slo10r:{name:"10 · rover",keys:["P","C","1B","2B","SS","3B","LF","CF","RF","ROV"],over:{LF:{x:46,y:46},RF:{x:154,y:46}}},
+  nine:{name:"9 · 3 outfield",keys:["P","C","1B","2B","SS","3B","LF","CF","RF"],over:{LF:{x:48,y:44},CF:{x:100,y:28},RF:{x:152,y:44}}}
+};
+function formationSlots(fkey){const f=FORMATIONS[fkey]||FORMATIONS.slo10;return f.keys.map(k=>({key:k,...(POS[k]||{x:100,y:100,label:k}),...(f.over&&f.over[k]?f.over[k]:{})}));}
+function shortName(n){n=(n||"").trim();if(!n)return"";const f=n.split(/\s+/)[0];return f.length>6?f.slice(0,6):f;}
+// Nearest fielder slot to a tapped point — used to suggest who made an error.
+function nearestSlot(fkey,pt){if(!pt)return null;let best=null,bd=1e9;formationSlots(fkey).forEach(s=>{const d=(s.x-pt.x)**2+(s.y-pt.y)**2;if(d<bd){bd=d;best=s;}});return best;}
+// Field with our fielders placed. assign: {posKey: playerName}. onSlot(posKey) to tap. highlight a slot; hit = a batted-ball point to draw.
+function DefenseField({fkey,assign,onSlot,highlight,hit,max,onTap}){
+  const slots=formationSlots(fkey);assign=assign||{};
+  const handle=onTap?e=>{const r=e.currentTarget.getBoundingClientRect();
+    const cx=(e.clientX!=null?e.clientX:(e.touches&&e.touches[0]?e.touches[0].clientX:0));
+    const cy=(e.clientY!=null?e.clientY:(e.touches&&e.touches[0]?e.touches[0].clientY:0));
+    onTap({x:Math.round(Math.max(4,Math.min(196,(cx-r.left)/r.width*200))),y:Math.round(Math.max(4,Math.min(176,(cy-r.top)/r.height*180)))});}:undefined;
+  return(<svg viewBox="0 0 200 180" onClick={handle} style={{width:"100%",maxWidth:max||320,display:"block",margin:"0 auto",borderRadius:12,cursor:onTap?"crosshair":"default",touchAction:"manipulation"}}>
+    {fieldSvgKids()}
+    {hit&&<React.Fragment><line x1={HOME.x} y1={HOME.y} x2={hit.x} y2={hit.y} stroke={HTC[hit.type]||"#fff"} strokeWidth="2" opacity=".85" strokeLinecap="round"/>
+      <circle cx={hit.x} cy={hit.y} r="4.5" fill={HTC[hit.type]||"#fff"} stroke="#fff" strokeWidth="1.5"/></React.Fragment>}
+    {slots.map(s=>{const name=assign[s.key];const hl=highlight===s.key;
+      return(<g key={s.key} onClick={onSlot?()=>onSlot(s.key):undefined} style={{cursor:onSlot?"pointer":"default"}}>
+        <circle cx={s.x} cy={s.y} r="12.5" fill={name?(hl?"#F2C94C":"#143d28"):"rgba(10,30,20,.35)"} stroke={hl?"#F2C94C":"#fff"} strokeWidth={hl?2.2:1.3} strokeDasharray={name?"":"3 2"}/>
+        <text x={s.x} y={s.y-15} textAnchor="middle" fill="#fff" style={{fontSize:7,fontWeight:800,paintOrder:"stroke",stroke:"#143d28",strokeWidth:2.5}}>{s.label}</text>
+        <text x={s.x} y={s.y+2.6} textAnchor="middle" fill={name?(hl?"#143d28":"#fff"):"#f0ead8"} style={{fontSize:name?6:9,fontWeight:800}}>{name?shortName(name):"+"}</text>
+      </g>);})}
+  </svg>);
+}
 function SprayInput({point,onPoint,hitType,onType}){
   const handle=e=>{const r=e.currentTarget.getBoundingClientRect();
     const cx=(e.clientX!=null?e.clientX:(e.touches&&e.touches[0]?e.touches[0].clientX:0));
@@ -485,7 +520,7 @@ function SprayView({balls}){
 // Opponent batted balls aggregated across games vs a given opponent name
 function oppSprayFor(games,opp){const out=[];const key=(opp||"").trim().toLowerCase();
   (games||[]).forEach(g=>{if(key&&(g.opponent||"").trim().toLowerCase()!==key)return;
-    (g.oppBattedBalls||[]).forEach(b=>out.push({x:b.x,y:b.y,type:b.type||"",hit:true}));});return out;}
+    (g.oppBattedBalls||[]).forEach(b=>{if(b.x!=null&&b.y!=null)out.push({x:b.x,y:b.y,type:b.type||"",hit:true,batter:b.batter||null,out:!!b.out,error:b.error||null});});});return out;}
 // Season fielding errors tallied per player
 function seasonErrors(games){const c={};(games||[]).forEach(g=>{(g.fieldErrors||[]).forEach(e=>{if(e.player)c[e.player]=(c[e.player]||0)+1;});});return c;}
 // Season fielding errors tallied per player AND per type
@@ -1149,7 +1184,7 @@ function GameDetail({game,onBack,onEdit,locked}){
     {(game.oppBattedBalls&&game.oppBattedBalls.length>0)&&<div style={{marginTop:22}}>
       <div style={{fontSize:13,fontWeight:800,color:"#1B5E20",letterSpacing:1,marginBottom:10}}>HOW {(game.opponent||"THEY").toUpperCase()} HIT</div>
       <div style={{background:"#fff",borderRadius:12,border:"1px solid #e4dec9",padding:12}}>
-        <SprayChart balls={(game.oppBattedBalls||[]).map(b=>({x:b.x,y:b.y,type:b.type,hit:true}))}/></div>
+        <SprayChart balls={(game.oppBattedBalls||[]).filter(b=>b.x!=null&&b.y!=null).map(b=>({x:b.x,y:b.y,type:b.type,hit:true}))}/></div>
     </div>}
     {(game.fieldErrors&&game.fieldErrors.length>0)&&<div style={{marginTop:18}}>
       <div style={{fontSize:13,fontWeight:800,color:"#1B5E20",letterSpacing:1,marginBottom:10}}>OUR FIELDING ERRORS ({game.fieldErrors.length})</div>
@@ -1454,62 +1489,92 @@ function OutModal({batter,outcome,onOk,onNo,bases}){
         </div></div></div>);
 }
 
-function OppModal({inning,onOk,lineup,opponent}){
+function OppModal({inning,onOk,lineup,opponent,formation,positions}){
+  const oppKey=(opponent||"").trim().toLowerCase();
+  const assign=positions||{};const fkey=formation||"slo10";
+  const hasField=Object.keys(assign).length>0;
   const [sc,setSc]=useState(0);
-  const [tab,setTab]=useState("runs"); // runs | hits | defense
-  const [balls,setBalls]=useState([]); // opponent batted balls this inning
-  const [pt,setPt]=useState(null);const [ptype,setPtype]=useState("");
-  const [errs,setErrs]=useState([]); // fielding errors this inning
-  const [errPlayer,setErrPlayer]=useState("");const [errType,setErrType]=useState("");
-  const addBall=()=>{if(pt){setBalls(b=>[...b,{x:pt.x,y:pt.y,type:ptype}]);setPt(null);setPtype("");}};
-  const addErr=()=>{if(errPlayer&&errType){setErrs(e=>[...e,{player:errPlayer,type:errType}]);setErrPlayer("");setErrType("");}};
-  const tabBtn=(id,label)=>(<button onClick={()=>setTab(id)} style={{flex:1,padding:"8px 4px",borderRadius:9,border:"none",cursor:"pointer",fontSize:11,fontWeight:800,
-    background:tab===id?"#1B5E20":"#e8f5e9",color:tab===id?"#F2C94C":"#1B5E20"}}>{label}</button>);
-  return(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
-    <div style={{background:"#ffffff",borderRadius:20,padding:20,maxWidth:360,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,.3)",maxHeight:"92vh",overflowY:"auto"}}>
-      <div style={{textAlign:"center",marginBottom:12}}>
-        <div style={{fontSize:12,color:"#5e6e82",fontWeight:600}}>INNING {inning} — {opponent||"OPPONENT"} BATTING</div></div>
-      <div style={{display:"flex",gap:6,marginBottom:14}}>{tabBtn("runs","RUNS")}{tabBtn("hits","THEIR HITS")}{tabBtn("defense","OUR DEFENSE")}</div>
+  const [balls,setBalls]=useState([]);
+  const [known,setKnown]=useState(()=>{try{return(ldT("opp_rosters",{})[oppKey])||[]}catch(e){return[]}});
+  const [adding,setAdding]=useState(false);
+  // per-batter form
+  const [bLabel,setBLabel]=useState("");const [newB,setNewB]=useState("");
+  const [pt,setPt]=useState(null);const [ptype,setPtype]=useState("");const [out,setOut]=useState(true);
+  const [errOn,setErrOn]=useState(false);const [errType,setErrType]=useState("");const [errPlayer,setErrPlayer]=useState("");
+  const near=nearestSlot(fkey,pt);const nearName=near?assign[near.key]:null;
+  const effErrPlayer=errPlayer||nearName||"";
+  const fielders=formationSlots(fkey).map(s=>({key:s.key,label:s.label,name:assign[s.key]})).filter(s=>s.name);
+  const resetForm=()=>{setBLabel("");setNewB("");setPt(null);setPtype("");setOut(true);setErrOn(false);setErrType("");setErrPlayer("");};
+  const saveBatter=()=>{
+    const label=(newB.trim()||bLabel||"").trim();
+    const ball={batter:label||null,x:pt?pt.x:null,y:pt?pt.y:null,type:ptype||"",out:!!out,
+      error:(errOn&&errType)?{player:effErrPlayer,type:errType}:null};
+    setBalls(b=>[...b,ball]);
+    if(label&&known.indexOf(label)<0){const nk=[...known,label];setKnown(nk);try{const m=ldT("opp_rosters",{});m[oppKey]=nk;svT("opp_rosters",m);}catch(e){}}
+    resetForm();setAdding(false);
+  };
+  const outsLogged=balls.filter(b=>b.out).length;
+  const errCount=balls.filter(b=>b.error).length;
+  const finish=()=>{const errs=balls.filter(b=>b.error).map(b=>({player:b.error.player,type:b.error.type}));onOk(sc,balls,errs);};
+  const box={position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:1000,display:"flex",alignItems:"flex-end",justifyContent:"center"};
+  const card={background:"#fff",borderRadius:"20px 20px 0 0",padding:20,width:"100%",maxWidth:480,boxShadow:"0 -8px 40px rgba(0,0,0,.3)",maxHeight:"94vh",overflowY:"auto"};
 
-      {tab==="runs"&&<div style={{textAlign:"center"}}>
-        <div style={{fontSize:15,fontWeight:800,color:"#1B5E20",marginBottom:12}}>How many runs did they score?</div>
-        <div style={{display:"flex",gap:6,marginBottom:8,justifyContent:"center",flexWrap:"wrap"}}>
-          {[0,1,2,3,4,5,6,7,8,9].map(n=><button key={n} onClick={()=>setSc(n)} style={{width:36,height:36,borderRadius:8,border:"none",cursor:"pointer",
-            background:sc===n?"#F44336":"#fce4ec",color:sc===n?"#fff":"#F44336",fontWeight:800,fontSize:14,fontFamily:FM}}>{n}</button>)}</div>
-      </div>}
+  if(adding)return(<div style={box}><div style={card}>
+    <div style={{fontSize:18,fontWeight:800,color:"#14532d",marginBottom:2}}>Record a batter</div>
+    <div style={{fontSize:12,color:"#8a9079",marginBottom:14}}>Inning {inning} · {opponent||"opponent"} batting</div>
+    <div style={{fontSize:12,fontWeight:700,color:"#14532d",marginBottom:6}}>WHO'S UP? <span style={{fontWeight:500,color:"#8a9079"}}>(name, # or description)</span></div>
+    {known.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:8}}>
+      {known.map(n=><button key={n} onClick={()=>{setBLabel(n);setNewB("")}} style={{padding:"6px 11px",borderRadius:16,border:"1px solid #e4dec9",cursor:"pointer",fontSize:12,fontWeight:600,
+        background:(bLabel===n&&!newB)?"#15502f":"#fff",color:(bLabel===n&&!newB)?"#fff":"#14532d"}}>{n}</button>)}</div>}
+    <input value={newB} onChange={e=>{setNewB(e.target.value);setBLabel("")}} placeholder='e.g. "12", "tall lefty", "red shirt"' style={{width:"100%",padding:"10px 12px",borderRadius:10,border:"1px solid #e4dec9",fontSize:14,background:"#fff",outline:"none",boxSizing:"border-box",marginBottom:14}}/>
+    {hasField?<React.Fragment>
+      <div style={{fontSize:12,fontWeight:700,color:"#14532d",marginBottom:6}}>WHERE DID THEY HIT IT? <span style={{fontWeight:500,color:"#8a9079"}}>(tap the field)</span></div>
+      <DefenseField fkey={fkey} assign={assign} onTap={p=>setPt(p)} hit={pt?{...pt,type:ptype}:null} highlight={pt&&near?near.key:null}/>
+      {pt&&nearName&&<div style={{textAlign:"center",fontSize:12,color:"#6b7563",marginTop:6}}>Closest fielder: <b style={{color:"#14532d"}}>{nearName}</b> ({near.label})</div>}
+    </React.Fragment>:
+      <div style={{fontSize:11,color:"#8a9079",fontStyle:"italic",marginBottom:6}}>Tip: set your field positions on the setup screen to tap exactly where they hit and auto-suggest the fielder.</div>}
+    <div style={{fontSize:12,fontWeight:700,color:"#14532d",margin:"12px 0 6px"}}>HOW'D THEY HIT IT?</div>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:6}}>
+      {HTYPES.map(t=><button key={t} onClick={()=>setPtype(t)} style={{padding:"9px 4px",borderRadius:9,border:"none",cursor:"pointer",fontSize:11,fontWeight:700,
+        background:ptype===t?HTC[t]:"#f3efe3",color:ptype===t?(t==="Line Drive"?"#5a4a00":"#fff"):"#6b7563"}}>{t}</button>)}</div>
+    <div style={{fontSize:12,fontWeight:700,color:"#14532d",margin:"12px 0 6px"}}>RESULT</div>
+    <div style={{display:"flex",gap:8}}>
+      <button onClick={()=>setOut(true)} style={{flex:1,padding:"11px 0",borderRadius:10,border:"none",cursor:"pointer",fontWeight:700,fontSize:13,background:out?"#15502f":"#ece7d8",color:out?"#fff":"#6b7563"}}>Out</button>
+      <button onClick={()=>setOut(false)} style={{flex:1,padding:"11px 0",borderRadius:10,border:"none",cursor:"pointer",fontWeight:700,fontSize:13,background:!out?"#C62828":"#ece7d8",color:!out?"#fff":"#6b7563"}}>Reached base</button></div>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",margin:"14px 0 0",padding:"12px 14px",borderRadius:12,background:errOn?"#fff3ec":"#f8f5ec",border:`1px solid ${errOn?"#f0c9a8":"#e4dec9"}`}}>
+      <span style={{fontSize:13,fontWeight:700,color:"#14532d"}}>Was it a fielding error?</span>
+      <button onClick={()=>setErrOn(v=>!v)} style={{width:46,height:26,borderRadius:20,border:"none",cursor:"pointer",background:errOn?"#E65100":"#cfcabb",position:"relative"}}>
+        <span style={{position:"absolute",top:3,left:errOn?23:3,width:20,height:20,borderRadius:"50%",background:"#fff",transition:"left .15s"}}/></button></div>
+    {errOn&&<div style={{marginTop:10}}>
+      <div style={{fontSize:11,fontWeight:700,color:"#14532d",marginBottom:5}}>WHO MADE THE ERROR?</div>
+      <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:10}}>
+        {(fielders.length?fielders.map(f=>f.name):(lineup||[])).map(n=><button key={n} onClick={()=>setErrPlayer(n)} style={{padding:"6px 10px",borderRadius:14,border:"1px solid #e4dec9",cursor:"pointer",fontSize:11,fontWeight:600,
+          background:effErrPlayer===n?"#15502f":"#fff",color:effErrPlayer===n?"#fff":"#14532d"}}>{n}{fielders.find(f=>f.name===n)?` · ${fielders.find(f=>f.name===n).label}`:""}</button>)}</div>
+      <div style={{fontSize:11,fontWeight:700,color:"#14532d",marginBottom:5}}>WHAT HAPPENED?</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5}}>
+        {ERRTYPES.map(t=><button key={t} onClick={()=>setErrType(t)} style={{padding:"8px 6px",borderRadius:8,border:"none",cursor:"pointer",fontSize:11,fontWeight:700,
+          background:errType===t?"#C62828":"#f3efe3",color:errType===t?"#fff":"#6b7563"}}>{t}</button>)}</div></div>}
+    <div style={{display:"flex",gap:10,marginTop:16}}>
+      <button onClick={()=>{resetForm();setAdding(false)}} style={{flex:1,padding:13,borderRadius:12,border:"1px solid #e4dec9",background:"#fff",color:"#6b7563",fontWeight:700,cursor:"pointer"}}>Cancel</button>
+      <button onClick={saveBatter} disabled={errOn&&!errType} style={{flex:2,padding:13,borderRadius:12,border:"none",background:(errOn&&!errType)?"#cfcabb":"#15502f",color:"#fff",fontWeight:700,cursor:(errOn&&!errType)?"default":"pointer"}}>Save batter</button></div>
+  </div></div>);
 
-      {tab==="hits"&&<div>
-        <div style={{fontSize:11,color:"#5e6e82",marginBottom:8}}>Tap where each opponent ball was hit + its type, then Add. Builds a scouting chart of how they hit.</div>
-        <SprayInput point={pt} onPoint={setPt} hitType={ptype} onType={setPtype}/>
-        <button onClick={addBall} disabled={!pt} style={{width:"100%",marginTop:8,padding:10,borderRadius:10,border:"none",cursor:pt?"pointer":"default",background:pt?"#2196F3":"#e4dec9",color:"#fff",fontWeight:800,fontSize:12}}>+ ADD THIS HIT</button>
-        {balls.length>0&&<div style={{marginTop:10,background:"#fff",borderRadius:10,border:"1px solid #e4dec9",padding:10}}>
-          <div style={{fontSize:10,fontWeight:700,color:"#5e6e82",marginBottom:4}}>LOGGED THIS INNING ({balls.length})</div>
-          {balls.map((b,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",fontSize:11,padding:"2px 0"}}>
-            <span style={{color:HTC[b.type]||"#333",fontWeight:700}}>{b.type||"ball"}</span>
-            <button onClick={()=>setBalls(balls.filter((_,j)=>j!==i))} style={{background:"none",border:"none",color:"#F44336",cursor:"pointer",fontSize:13}}>×</button></div>)}</div>}
-      </div>}
-
-      {tab==="defense"&&<div>
-        <div style={{fontSize:11,color:"#5e6e82",marginBottom:8}}>Log a fielding error by one of our players.</div>
-        <div style={{fontSize:10,fontWeight:700,color:"#1B5E20",marginBottom:4}}>WHO?</div>
-        <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:10}}>
-          {(lineup||[]).map(n=><button key={n} onClick={()=>setErrPlayer(n)} style={{padding:"6px 10px",borderRadius:8,border:"none",cursor:"pointer",fontSize:11,fontWeight:700,
-            background:errPlayer===n?"#1B5E20":"#f3efe3",color:errPlayer===n?"#fff":"#5e6e82"}}>{n}</button>)}</div>
-        <div style={{fontSize:10,fontWeight:700,color:"#1B5E20",marginBottom:4}}>WHAT HAPPENED?</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5,marginBottom:10}}>
-          {ERRTYPES.map(t=><button key={t} onClick={()=>setErrType(t)} style={{padding:"8px 6px",borderRadius:8,border:"none",cursor:"pointer",fontSize:11,fontWeight:700,
-            background:errType===t?"#F44336":"#f3efe3",color:errType===t?"#fff":"#5e6e82"}}>{t}</button>)}</div>
-        <button onClick={addErr} disabled={!errPlayer||!errType} style={{width:"100%",padding:10,borderRadius:10,border:"none",cursor:(errPlayer&&errType)?"pointer":"default",background:(errPlayer&&errType)?"#F44336":"#e4dec9",color:"#fff",fontWeight:800,fontSize:12}}>+ ADD ERROR</button>
-        {errs.length>0&&<div style={{marginTop:10,background:"#fff",borderRadius:10,border:"1px solid #e4dec9",padding:10}}>
-          <div style={{fontSize:10,fontWeight:700,color:"#5e6e82",marginBottom:4}}>LOGGED THIS INNING ({errs.length})</div>
-          {errs.map((e,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",fontSize:11,padding:"2px 0"}}>
-            <span><b>{e.player}</b> — {e.type}</span>
-            <button onClick={()=>setErrs(errs.filter((_,j)=>j!==i))} style={{background:"none",border:"none",color:"#F44336",cursor:"pointer",fontSize:13}}>×</button></div>)}</div>}
-      </div>}
-
-      <button onClick={()=>onOk(sc,balls,errs)} style={{width:"100%",padding:14,borderRadius:12,border:"none",background:"#1B5E20",color:"#F2C94C",fontWeight:800,fontSize:14,cursor:"pointer",marginTop:16}}>CONFIRM — END HALF-INNING</button>
-      <div style={{fontSize:10,color:"#8b98ac",textAlign:"center",marginTop:8}}>Runs: {sc} · Hits logged: {balls.length} · Errors: {errs.length}</div>
-    </div></div>);
+  return(<div style={box}><div style={card}>
+    <div style={{fontSize:18,fontWeight:800,color:"#14532d",marginBottom:2}}>{opponent||"Opponent"} batting</div>
+    <div style={{fontSize:12,color:"#8a9079",marginBottom:14}}>Inning {inning} · log each batter live, or just set their runs below</div>
+    <button onClick={()=>setAdding(true)} style={{width:"100%",padding:13,borderRadius:12,border:"2px dashed #15502f",background:"#fff",color:"#15502f",fontWeight:700,fontSize:14,cursor:"pointer",marginBottom:12}}>＋ Record a batter</button>
+    {balls.length>0&&<div style={{background:"#fff",borderRadius:12,border:"1px solid #e4dec9",padding:"4px 12px",marginBottom:12}}>
+      <div style={{fontSize:10,fontWeight:700,color:"#8a9079",padding:"8px 0 4px"}}>THIS INNING · {outsLogged} out{outsLogged!==1?"s":""}{errCount?` · ${errCount} error${errCount!==1?"s":""}`:""}</div>
+      {balls.map((b,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 0",borderTop:i?"1px solid #efe9db":"none"}}>
+        <span style={{width:7,height:7,borderRadius:"50%",background:b.out?"#2E7D32":"#C62828",flexShrink:0}}/>
+        <span style={{flex:1,fontSize:13,color:"#14532d"}}><b>{b.batter||"Batter"}</b> <span style={{color:"#8a9079"}}>{b.type?`· ${b.type} `:""}{b.out?"· out":"· on base"}</span>{b.error?<span style={{color:"#C62828",fontWeight:600}}> · E: {b.error.player} ({b.error.type})</span>:null}</span>
+        <button onClick={()=>setBalls(balls.filter((_,j)=>j!==i))} style={{background:"none",border:"none",color:"#cbb0b0",cursor:"pointer",fontSize:16}}>×</button></div>)}</div>}
+    <div style={{fontSize:12,fontWeight:700,color:"#14532d",marginBottom:8}}>RUNS THEY SCORED THIS INNING</div>
+    <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:16}}>
+      {[0,1,2,3,4,5,6,7,8,9].map(n=><button key={n} onClick={()=>setSc(n)} style={{width:38,height:38,borderRadius:10,border:"none",cursor:"pointer",
+        background:sc===n?"#C62828":"#f6e3e3",color:sc===n?"#fff":"#C62828",fontWeight:800,fontSize:15}}>{n}</button>)}</div>
+    <button onClick={finish} style={{width:"100%",padding:15,borderRadius:13,border:"none",background:"#15502f",color:"#fff",fontWeight:700,fontSize:15,cursor:"pointer"}}>End {opponent||"opponent"}'s half — {sc} run{sc!==1?"s":""}</button>
+  </div></div>);
 }
 
 // ─── Daily Awards (MVP of the day) ───
@@ -1891,6 +1956,16 @@ function App(){
   const [opp,setOpp]=useState("");const [gNum,setGNum]=useState("");const [gDate,setGDate]=useState(new Date().toISOString().slice(0,10));
   const [field,setField]=useState("");const [isHome,setIsHome]=useState(true);const [newP,setNewP]=useState("");
   const [dragI,setDragI]=useState(null);const [rmConf,setRmConf]=useState(null);const [renameConf,setRenameConf]=useState(null);const [teamMenu,setTeamMenu]=useState(false);const [showBuilder,setShowBuilder]=useState(false);const [scoutOpp,setScoutOpp]=useState(null);
+  // Defensive setup: formation + which of our players stands at each position (remembered per team)
+  const [formation,setFormation]=useState(()=>ldT("formation","slo10"));
+  const [dpos,setDpos]=useState(()=>ldT("def_positions",{}));
+  const [posPick,setPosPick]=useState(null);// slot key currently being assigned
+  const [scoutBatter,setScoutBatter]=useState(null);// filter scouting to one opponent batter
+  useEffect(()=>{svT("formation",formation)},[formation]);
+  useEffect(()=>{svT("def_positions",dpos)},[dpos]);
+  const assignPos=(slotKey,name)=>setDpos(p=>{const n={...p};if(name===null){delete n[slotKey];return n;}
+    Object.keys(n).forEach(k=>{if(n[k]===name)delete n[k];});n[slotKey]=name;return n;});
+  const autoPositions=()=>{const keys=FORMATIONS[formation].keys;const next={};keys.forEach((k,i)=>{if(lineup[i])next[k]=lineup[i];});setDpos(next);};
   // Owner edit-lock: when a PIN is set and locked, rename/delete controls are hidden
   const [locked,setLocked]=useState(()=>{const p=ld("owner_pin","");return p?ld("edits_locked",true):false;});
   const [showLock,setShowLock]=useState(false);
@@ -2148,16 +2223,17 @@ function App(){
         {endConfirm&&<div style={{fontSize:10,color:"#5e6e82",marginTop:5}}>Ends our at-bats now (6-run rule, etc.)</div>}
       </div>}
 
-      {waitOpp&&<div style={{background:"#FFF3E0",borderRadius:12,padding:16,marginTop:12,border:"2px solid #FF9800",textAlign:"center"}}>
-        <div style={{fontSize:13,fontWeight:700,color:"#E65100",marginBottom:8}}>Waiting for {gd.opponent||"opponent"} to bat...</div>
-        <button onClick={()=>setOppAsk(inn)} style={{padding:"12px 24px",borderRadius:10,border:"none",background:"#FF9800",color:"#fff",fontWeight:800,fontSize:14,cursor:"pointer"}}>THEIR INNING IS OVER</button>
+      {waitOpp&&<div style={{background:"#143d28",borderRadius:16,padding:"18px 16px",marginTop:12,textAlign:"center",boxShadow:"0 6px 20px rgba(20,61,40,.25)"}}>
+        <div style={{fontSize:14,fontWeight:800,color:"#F2C94C",marginBottom:4}}>🧤 {gd.opponent||"Opponent"} is batting</div>
+        <div style={{fontSize:11.5,color:"#a9c7b4",marginBottom:12,lineHeight:1.5}}>Track each batter live as they hit, or just enter their runs when the inning ends — either way.</div>
+        <button onClick={()=>setOppAsk(inn)} style={{width:"100%",padding:"13px 0",borderRadius:12,border:"none",background:"#F2C94C",color:"#143d28",fontWeight:800,fontSize:15,cursor:"pointer"}}>Open fielding tracker</button>
       </div>}
 
       {hist.length>0&&<div style={{textAlign:"center",marginTop:12}}>
         <button onClick={undo} style={{padding:"6px 16px",borderRadius:8,border:"1px solid #F44336",background:"transparent",color:"#F44336",fontSize:11,fontWeight:700,cursor:"pointer"}}>UNDO LAST</button></div>}
 
       {modal&&<OutModal batter={modal.batter} outcome={modal.outcome} bases={bases} onOk={doPlay} onNo={()=>setModal(null)}/>}
-      {oppAsk!==null&&<OppModal inning={oppAsk} onOk={doOpp} lineup={gd.lineup} opponent={gd.opponent}/>}
+      {oppAsk!==null&&<OppModal inning={oppAsk} onOk={doOpp} lineup={gd.lineup} opponent={gd.opponent} formation={gd.formation} positions={gd.positions}/>}
 
       {skipConf&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
         <div style={{background:"#ffffff",borderRadius:16,padding:24,maxWidth:340,width:"100%",textAlign:"center",boxShadow:"0 20px 60px rgba(0,0,0,.3)"}}>
@@ -2291,6 +2367,15 @@ function App(){
           <input value={newP} onChange={e=>setNewP(e.target.value)} placeholder="Add new player" style={{flex:1,padding:"8px 12px",borderRadius:8,border:"1px solid #e4dec9",fontSize:13,background:"#fff",outline:"none"}}
             onKeyDown={e=>{if(e.key==="Enter"&&newP.trim()){addP(newP.trim());setNewP("")}}}/>
           <button onClick={()=>{if(newP.trim()){addP(newP.trim());setNewP("")}}} style={{padding:"8px 16px",borderRadius:8,border:"none",background:"#1B5E20",color:"#F2C94C",fontWeight:700,fontSize:13,cursor:"pointer"}}>+</button></div></div>
+      <div style={{background:"#fff",borderRadius:16,padding:"16px 18px",marginBottom:16,border:"1px solid #e4dec9"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:4}}>
+          <span style={{fontSize:18,fontWeight:800,color:"#14532d",letterSpacing:-.2}}>Field positions</span>
+          <span style={{fontSize:13,color:"#8a9079",fontWeight:500}}>{Object.keys(dpos).length}/{FORMATIONS[formation].keys.length} set</span></div>
+        <div style={{fontSize:12,color:"#6b7563",marginBottom:12}}>Tap a spot, then pick who's playing there. This is how fielding errors get pinned on the right player.</div>
+        <div style={{display:"flex",gap:7,marginBottom:12}}>
+          {Object.entries(FORMATIONS).map(([k,f])=><button key={k} onClick={()=>setFormation(k)} style={{flex:1,padding:"8px 3px",borderRadius:10,border:"none",cursor:"pointer",fontSize:11,fontWeight:700,background:formation===k?"#15502f":"#ece7d8",color:formation===k?"#fff":"#6b7563"}}>{f.name}</button>)}</div>
+        <DefenseField fkey={formation} assign={dpos} onSlot={k=>setPosPick(k)}/>
+        {lineup.length>0&&<button onClick={autoPositions} style={{width:"100%",marginTop:12,padding:10,borderRadius:10,border:"1px solid #e4dec9",background:"#fff",color:"#14532d",fontWeight:700,fontSize:12,cursor:"pointer"}}>Auto-fill from batting order</button>}</div>
       {(()=>{
         const miss=[];
         if(!opp.trim())miss.push("opponent name");
@@ -2302,7 +2387,7 @@ function App(){
         return(<React.Fragment>
           {!canStart&&<div style={{background:"#FFF3E0",border:"2px solid #FFB74D",borderRadius:10,padding:"10px 12px",marginBottom:10,fontSize:12,color:"#E65100",fontWeight:600,textAlign:"center"}}>
             Still needed: {miss.join(" • ")}</div>}
-          <button onClick={()=>{if(!canStart)return;startG({lineup,opponent:opp,gameNum:gNum,roster,date:gDate,field,isHome})}}
+          <button onClick={()=>{if(!canStart)return;startG({lineup,opponent:opp,gameNum:gNum,roster,date:gDate,field,isHome,positions:dpos,formation})}}
             disabled={!canStart} style={{width:"100%",padding:17,borderRadius:14,border:"none",display:"flex",alignItems:"center",justifyContent:"center",gap:9,
               background:!canStart?"#cfcabb":"#15502f",color:!canStart?"#9a9684":"#fff",fontWeight:700,fontSize:17,
               cursor:!canStart?"default":"pointer",letterSpacing:.2,
@@ -2310,18 +2395,40 @@ function App(){
         </React.Fragment>);
       })()}
       {renameConf&&<RenameModal player={renameConf} roster={roster} onLocalRename={renameLocal} onClose={()=>setRenameConf(null)} syncUrl={ldT("sync_url","")}/>}
+      {posPick&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:1200,display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={()=>setPosPick(null)}>
+        <div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:"20px 20px 0 0",padding:20,width:"100%",maxWidth:480,boxShadow:"0 -8px 40px rgba(0,0,0,.25)",maxHeight:"80vh",overflowY:"auto"}}>
+          <div style={{fontSize:18,fontWeight:800,color:"#14532d",marginBottom:2}}>Who's at {(POS[posPick]||{}).label||posPick}?</div>
+          <div style={{fontSize:12,color:"#8a9079",marginBottom:14}}>Pick a player from your batting order.</div>
+          <div style={{display:"flex",flexDirection:"column",gap:7}}>
+            {(lineup.length?lineup:roster).map(n=>{const here=dpos[posPick]===n;const at=Object.keys(dpos).find(k=>dpos[k]===n);
+              return(<button key={n} onClick={()=>{assignPos(posPick,n);setPosPick(null)}} style={{display:"flex",alignItems:"center",gap:11,padding:"10px 12px",borderRadius:12,border:here?"1px solid #ead9a0":"1px solid #e4dec9",background:here?"#fdf6e3":"#fff",cursor:"pointer",textAlign:"left"}}>
+                <Avatar name={n} size={30}/>
+                <span style={{flex:1,fontSize:15,fontWeight:600,color:"#14532d"}}>{n}</span>
+                {at&&at!==posPick&&<span style={{fontSize:11,color:"#8a9079",fontWeight:600}}>{(POS[at]||{}).label||at}</span>}
+                {here&&<span style={{color:"#15502f",fontWeight:800}}>✓</span>}</button>);})}
+          </div>
+          <div style={{display:"flex",gap:10,marginTop:14}}>
+            <button onClick={()=>{assignPos(posPick,null);setPosPick(null)}} style={{flex:1,padding:12,borderRadius:12,border:"1px solid #e4dec9",background:"#fff",color:"#C62828",fontWeight:700,cursor:"pointer"}}>Clear spot</button>
+            <button onClick={()=>setPosPick(null)} style={{flex:1,padding:12,borderRadius:12,border:"none",background:"#ece7d8",color:"#6b7563",fontWeight:700,cursor:"pointer"}}>Done</button></div>
+        </div></div>}
       {teamMenu&&<TeamModal onClose={()=>setTeamMenu(false)} locked={locked} onNeedUnlock={()=>{setTeamMenu(false);setShowLock(true)}} onShare={roster.length?()=>{setTeamMenu(false);setShowShare(true)}:null}/>}
       {showBuilder&&<LineupBuilder lineup={lineup} games={games} onClose={()=>setShowBuilder(false)} onApply={ord=>{setLineup(ord);setShowBuilder(false)}}/>}
-      {scoutOpp&&(()=>{const balls=oppSprayFor(games,scoutOpp);const byType={};balls.forEach(b=>{if(b.type)byType[b.type]=(byType[b.type]||0)+1});
-        return(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:1300,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
-          <div style={{background:"#ffffff",borderRadius:16,padding:20,maxWidth:380,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,.4)",maxHeight:"90vh",overflowY:"auto"}}>
-            <div style={{fontSize:17,fontWeight:900,color:"#1B5E20",marginBottom:2}}>📍 Scouting: {scoutOpp}</div>
-            <div style={{fontSize:11,color:"#5e6e82",marginBottom:12}}>{balls.length} batted balls logged across your past games vs them.</div>
+      {scoutOpp&&(()=>{const allBalls=oppSprayFor(games,scoutOpp);
+        const batters=[...new Set(allBalls.map(b=>b.batter).filter(Boolean))];
+        const balls=scoutBatter?allBalls.filter(b=>b.batter===scoutBatter):allBalls;
+        const byType={};balls.forEach(b=>{if(b.type)byType[b.type]=(byType[b.type]||0)+1});
+        return(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:1300,display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={()=>{setScoutOpp(null);setScoutBatter(null)}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"#ffffff",borderRadius:"20px 20px 0 0",padding:20,maxWidth:480,width:"100%",boxShadow:"0 -8px 40px rgba(0,0,0,.3)",maxHeight:"92vh",overflowY:"auto"}}>
+            <div style={{fontSize:18,fontWeight:800,color:"#14532d",marginBottom:2}}>📍 Scouting {scoutOpp}</div>
+            <div style={{fontSize:12,color:"#8a9079",marginBottom:12}}>{balls.length} batted ball{balls.length!==1?"s":""} logged{scoutBatter?` for ${scoutBatter}`:" across past games"}.</div>
+            {batters.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>
+              <button onClick={()=>setScoutBatter(null)} style={{padding:"6px 12px",borderRadius:16,border:"1px solid #e4dec9",cursor:"pointer",fontSize:12,fontWeight:600,background:!scoutBatter?"#15502f":"#fff",color:!scoutBatter?"#fff":"#14532d"}}>All batters</button>
+              {batters.map(n=><button key={n} onClick={()=>setScoutBatter(n)} style={{padding:"6px 12px",borderRadius:16,border:"1px solid #e4dec9",cursor:"pointer",fontSize:12,fontWeight:600,background:scoutBatter===n?"#15502f":"#fff",color:scoutBatter===n?"#fff":"#14532d"}}>{n}</button>)}</div>}
             <div style={{background:"#fff",borderRadius:12,border:"1px solid #e4dec9",padding:12,marginBottom:12}}><SprayChart balls={balls}/></div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:12}}>
               {HTYPES.map(t=><div key={t} style={{background:"#fff",border:"1px solid #e4dec9",borderRadius:10,padding:"8px 10px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <span style={{fontSize:11,fontWeight:700,color:HTC[t]}}>{t}</span><span style={{fontSize:15,fontWeight:900,fontFamily:FM,color:"#1B5E20"}}>{byType[t]||0}</span></div>)}</div>
-            <button onClick={()=>setScoutOpp(null)} style={{width:"100%",padding:12,borderRadius:10,border:"none",background:"#1B5E20",color:"#F2C94C",fontWeight:800,cursor:"pointer"}}>Close</button>
+                <span style={{fontSize:11,fontWeight:700,color:HTC[t]}}>{t}</span><span style={{fontSize:15,fontWeight:800,color:"#14532d"}}>{byType[t]||0}</span></div>)}</div>
+            <button onClick={()=>{setScoutOpp(null);setScoutBatter(null)}} style={{width:"100%",padding:13,borderRadius:12,border:"none",background:"#15502f",color:"#fff",fontWeight:700,cursor:"pointer"}}>Close</button>
           </div></div>);})()}
       {showLock&&<LockModal locked={locked} setLocked={setLocked} onClose={()=>setShowLock(false)}/>}
       {rmConf&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
