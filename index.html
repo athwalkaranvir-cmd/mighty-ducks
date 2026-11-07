@@ -57,7 +57,7 @@ input{font-family:inherit}
 <div class="hud-c hud-tl"></div><div class="hud-c hud-tr"></div><div class="hud-c hud-bl"></div><div class="hud-c hud-br"></div>
 <script type="text/plain" id="app-src">
 const {useState,useEffect,useRef} = React;
-const APP_VERSION="BUILD 42 (playoff stats)";
+const APP_VERSION="BUILD 45 (FC batter advance on error)";
 let TEAM="MIGHTY DUCKS"; // reassigned from the active team below
 const HITS=["1B","2B","3B","HR"];
 const OUTS=["GO","SO","FO","FLO"];
@@ -438,7 +438,7 @@ function DefenseField({fkey,assign,onSlot,highlight,hit,max,onTap,trail}){
       </g>);})}
   </svg>);
 }
-function SprayInput({point,onPoint,hitType,onType}){
+function SprayInput({point,onPoint,hitType,onType,trail}){
   const handle=e=>{const r=e.currentTarget.getBoundingClientRect();
     const cx=(e.clientX!=null?e.clientX:(e.touches&&e.touches[0]?e.touches[0].clientX:0));
     const cy=(e.clientY!=null?e.clientY:(e.touches&&e.touches[0]?e.touches[0].clientY:0));
@@ -448,6 +448,9 @@ function SprayInput({point,onPoint,hitType,onType}){
   return(<div>
     <svg viewBox="0 0 200 180" onClick={handle} style={{width:"100%",maxWidth:300,display:"block",margin:"0 auto",borderRadius:12,cursor:"crosshair",touchAction:"manipulation"}}>
       {fieldSvgKids()}
+      {(trail||[]).filter(b=>b.x!=null&&b.y!=null).map((b,i)=><g key={"t"+i}>
+        <line x1={HOME.x} y1={HOME.y} x2={b.x} y2={b.y} stroke={HTC[b.type]||"#fff"} strokeWidth="1.6" opacity=".5" strokeDasharray="2.5 2" strokeLinecap="round"/>
+        <circle cx={b.x} cy={b.y} r="3.2" fill={HTC[b.type]||"#ccc"} opacity=".65" stroke="#fff" strokeWidth="1"/></g>)}
       {point&&<React.Fragment>
         <line x1={HOME.x} y1={HOME.y} x2={point.x} y2={point.y} stroke={HTC[hitType]||"#fff"} strokeWidth="2" opacity="0.85" strokeLinecap="round"/>
         <circle cx={point.x} cy={point.y} r="7" fill={HTC[hitType]||"#fff"} stroke="#fff" strokeWidth="1.8"/></React.Fragment>}
@@ -1163,7 +1166,7 @@ function GameEditor({game,roster,onSave,onCancel}){
   </div>);
 }
 
-function GameDetail({game,onBack,onEdit,locked}){
+function GameDetail({game,onBack,onEdit,locked,onTogglePlayoff}){
   const plays=game.plays||[];const stats={};
   (game.lineup||[]).forEach(n=>{stats[n]={AB:0,R:0,H:0,"1B":0,"2B":0,"3B":0,HR:0,RBI:0,BB:0}});
   plays.forEach(p=>{const s=stats[p.batter];if(!s)return;if(!["BB","SF","FC"].includes(p.outcome))s.AB++;if(HITS.includes(p.outcome)){s.H++;s[p.outcome]++}if(p.outcome==="BB")s.BB++;s.RBI+=(p.rbi||0)});
@@ -1177,7 +1180,10 @@ function GameDetail({game,onBack,onEdit,locked}){
     </div>
     <div style={{textAlign:"center",marginBottom:16}}>
       <div style={{fontSize:20,fontWeight:900,color:"#1B5E20",fontFamily:FM}}>{TEAM} {ourR} — {oppR} {game.opponent||"OPP"}</div>
-      <div style={{fontSize:12,color:"#5e6e82",marginTop:4}}>{game.date}{game.field?` • ${game.field}`:""}</div></div>
+      <div style={{fontSize:12,color:"#5e6e82",marginTop:4}}>{game.date}{game.field?` • ${game.field}`:""}</div>
+      {onTogglePlayoff&&!locked&&<button onClick={onTogglePlayoff} style={{marginTop:10,padding:"6px 14px",borderRadius:20,cursor:"pointer",fontSize:11,fontWeight:800,letterSpacing:.3,
+        border:game.isPlayoff?"none":"1px solid #ead9a0",background:game.isPlayoff?"#C79200":"#fff8e8",color:game.isPlayoff?"#fff":"#C79200"}}>{game.isPlayoff?"🏆 Playoff game — tap to undo":"🏆 Mark as playoff game"}</button>}
+      {game.isPlayoff&&(locked||!onTogglePlayoff)&&<div style={{marginTop:10,display:"inline-block",padding:"4px 12px",borderRadius:20,fontSize:11,fontWeight:800,background:"#fff8e8",border:"1px solid #ead9a0",color:"#C79200"}}>🏆 PLAYOFF GAME</div>}</div>
     <Scoreboard opp={game.opponent} ourS={game.ourScoreByInning} oppS={game.oppScoreByInning} isHome={game.isHome}/>
     <div style={{overflowX:"auto",borderRadius:12,border:"1px solid #e4dec9",marginTop:16}}>
       <table style={{width:"100%",borderCollapse:"collapse",fontSize:11,fontFamily:FM}}>
@@ -1375,7 +1381,7 @@ function SyncPage({games,onBack,onSynced,sheetLink,setSheetLink}){
 }
 
 // ─── Outcome Modal ───
-function OutModal({batter,outcome,onOk,onNo,bases}){
+function OutModal({batter,outcome,onOk,onNo,bases,batterTrail}){
   const isHR=outcome==="HR",isFC=outcome==="FC",isSF=outcome==="SF";
   const isGO=outcome==="GO",isFLO=outcome==="FLO";
   const isOut=OUTS.includes(outcome);
@@ -1421,6 +1427,7 @@ function OutModal({batter,outcome,onOk,onNo,bases}){
   const showRunners=((reachBase||outWithRunners)&&hasR)||isHR;
   const isHit=HITS.includes(outcome)&&!isHR;
   const [batterOut,setBatterOut]=useState(false); // batter credited the hit but thrown out on the bases
+  const [batterBase,setBatterBase]=useState("1st"); // on a FC the batter can reach 2nd/3rd on the fielding error
   const inPlay=!["BB","SO"].includes(outcome); // batted ball → offer spray logging
   const [sprayPt,setSprayPt]=useState(null);const [sprayType,setSprayType]=useState("");
 
@@ -1451,6 +1458,13 @@ function OutModal({batter,outcome,onOk,onNo,bases}){
           <div style={{display:"flex",gap:6,marginTop:6}}>
             {["1st","2nd","3rd","Home"].map(b=><button key={b} onClick={()=>setFcBase(b)} style={{flex:1,padding:"8px 0",borderRadius:8,border:"none",cursor:"pointer",
               background:fcBase===b?"#795548":"#e9eef6",color:fcBase===b?"#fff":"#795548",fontWeight:700,fontSize:12}}>{b}</button>)}</div></div>}
+
+        {isFC&&<div style={{marginBottom:14}}>
+          <label style={{fontSize:11,fontWeight:700,color:"#1B5E20"}}>WHERE DID {batter.toUpperCase()} END UP?</label>
+          <div style={{fontSize:10,color:"#8b98ac",margin:"2px 0 6px"}}>2nd or 3rd = reached an extra base on the fielding error</div>
+          <div style={{display:"flex",gap:6}}>
+            {["1st","2nd","3rd"].map(bb=><button key={bb} onClick={()=>setBatterBase(bb)} style={{flex:1,padding:"10px 0",borderRadius:9,border:"none",cursor:"pointer",fontWeight:700,fontSize:13,
+              background:batterBase===bb?"#15502f":"#ece7d8",color:batterBase===bb?"#fff":"#6b7563"}}>{bb}{bb!=="1st"?" (error)":""}</button>)}</div></div>}
 
         {/* HR: auto score everyone */}
         {isHR&&<div style={{marginBottom:14}}>
@@ -1491,14 +1505,15 @@ function OutModal({batter,outcome,onOk,onNo,bases}){
 
         {inPlay&&<div style={{background:"#fff",border:"1px solid #e4dec9",borderRadius:12,padding:12,marginBottom:10}}>
           <div style={{fontSize:11,fontWeight:800,color:"#1B5E20",marginBottom:6}}>WHERE'D IT GO? <span style={{fontWeight:600,color:"#8b98ac"}}>· optional</span></div>
-          <SprayInput point={sprayPt} onPoint={setSprayPt} hitType={sprayType} onType={setSprayType}/>
+          {(batterTrail||[]).length>0&&<div style={{fontSize:10,color:"#8a9079",marginBottom:6,display:"flex",alignItems:"center",gap:6}}><span style={{width:16,height:0,borderTop:"2px dashed #8a9079"}}/>{batterTrail.length} past hit{batterTrail.length!==1?"s":""} by {batter} shown</div>}
+          <SprayInput point={sprayPt} onPoint={setSprayPt} hitType={sprayType} onType={setSprayType} trail={batterTrail}/>
         </div>}
 
         <div style={{display:"flex",gap:10,marginTop:4}}>
           <button onClick={onNo} style={{flex:1,padding:12,borderRadius:10,border:"2px solid #7e93b2",background:"transparent",color:"#5e6e82",fontWeight:700,fontSize:13,cursor:"pointer"}}>Cancel</button>
           <button onClick={()=>{const fs=isHR?[...rl.map(r=>r.name),batter]:sp;
             const rbi=isHR?rl.length+1:isSF?sp.length:sp.filter(n=>n!==batter).length;
-            const fcInfo=isFC?{player:fcPlayer,base:fcBase}:null;
+            const fcInfo=isFC?{player:fcPlayer,base:fcBase,batterBase}:null;
             onOk(rbi,fs.includes(batter)?1:0,fs,fcInfo,adv,outsOnPlay.length,batterOut,sprayPt,sprayType)}}
             style={{flex:2,padding:12,borderRadius:10,border:"none",background:"#1B5E20",color:"#F2C94C",fontWeight:800,fontSize:13,cursor:"pointer"}}>Confirm</button>
         </div></div></div>);
@@ -1610,10 +1625,11 @@ function OppModal({inning,onOk,lineup,opponent,formation,positions,priorOppBalls
 }
 
 // ─── Daily Awards (MVP of the day) ───
-function DailyAwards({games,date,onDone}){
-  // Get all award-eligible games from this date
-  const todayGames=games.filter(g=>g.date===date&&g.plays&&g.awardEligible!==false);
-  if(todayGames.length<2)return(<div style={{maxWidth:480,margin:"0 auto",padding:20,textAlign:"center"}}>
+function DailyAwards({games,date,onDone,solo}){
+  // solo = one specific game (playoff MVP after each game); otherwise the day's eligible games
+  const todayGames=solo?[solo]:games.filter(g=>g.date===date&&g.plays&&g.awardEligible!==false);
+  const po=!!(solo&&solo.isPlayoff);
+  if(!solo&&todayGames.length<2)return(<div style={{maxWidth:480,margin:"0 auto",padding:20,textAlign:"center"}}>
     <div style={{fontSize:14,color:"#5e6e82",marginBottom:16}}>Play your 2nd game tonight to see the daily MVP!</div>
     <button onClick={onDone} style={{padding:"12px 24px",borderRadius:10,border:"none",background:"#1B5E20",color:"#F2C94C",fontWeight:800,fontSize:14,cursor:"pointer"}}>CONTINUE</button>
   </div>);
@@ -1650,15 +1666,15 @@ function DailyAwards({games,date,onDone}){
 
   return(<div style={{maxWidth:480,margin:"0 auto",padding:20}}>
     <div style={{textAlign:"center",marginBottom:20}}>
-      <div style={{fontSize:12,color:"#5e6e82",fontWeight:600,letterSpacing:2}}>GAME NIGHT AWARDS</div>
-      <div style={{fontSize:11,color:"#5e6e82",marginTop:4}}>{date}</div>
+      <div style={{fontSize:12,color:po?"#C79200":"#5e6e82",fontWeight:700,letterSpacing:2}}>{po?"🏆 PLAYOFF GAME":solo?"GAME":"GAME NIGHT"} AWARDS</div>
+      <div style={{fontSize:11,color:"#5e6e82",marginTop:4}}>{solo?`vs ${solo.opponent||"opponent"} · ${solo.date||date}`:date}</div>
     </div>
 
     {/* MVP */}
-    <div style={{background:"linear-gradient(135deg,#1B5E20,#2E7D32)",borderRadius:16,padding:24,marginBottom:16,textAlign:"center",boxShadow:"0 8px 32px rgba(27,94,32,.3)"}}>
+    <div style={{background:po?"linear-gradient(135deg,#8a6a00,#C79200)":"linear-gradient(135deg,#1B5E20,#2E7D32)",borderRadius:16,padding:24,marginBottom:16,textAlign:"center",boxShadow:po?"0 8px 32px rgba(199,146,0,.3)":"0 8px 32px rgba(27,94,32,.3)"}}>
       <div style={{fontSize:36,marginBottom:4}}>🏆</div>
-      <div style={{fontSize:12,color:"#A5D6A7",fontWeight:600,letterSpacing:2}}>MVP OF THE DAY</div>
-      <div style={{fontSize:28,fontWeight:900,color:"#F2C94C",fontFamily:FM,marginTop:8}}>{mvp.name}</div>
+      <div style={{fontSize:12,color:po?"#ffe9a8":"#A5D6A7",fontWeight:600,letterSpacing:2}}>{po?"PLAYOFF MVP":solo?"GAME MVP":"MVP OF THE DAY"}</div>
+      <div style={{fontSize:28,fontWeight:900,color:po?"#fff":"#F2C94C",fontFamily:FM,marginTop:8}}>{mvp.name}</div>
       <div style={{display:"flex",justifyContent:"center",gap:16,marginTop:12}}>
         <div><div style={{fontSize:18,fontWeight:800,color:"#fff",fontFamily:FM}}>{mvp.s.H}-{mvp.s.AB}</div>
           <div style={{fontSize:9,color:"#A5D6A7"}}>H-AB</div></div>
@@ -1963,6 +1979,7 @@ function App(){
   const [hist,setHist]=useState(savedActive&&savedActive.hist?savedActive.hist:[]);
   const [modal,setModal]=useState(null);const [games,setGames]=useState(()=>ldT("games",[]));
   const [picking,setPicking]=useState(false);const [ourS,setOurS]=useState(savedActive?savedActive.ourS:{});const [oppS,setOppS]=useState(savedActive?savedActive.oppS:{});
+  const [showBatSpray,setShowBatSpray]=useState(true);// keep current batter's spray chart visible while they're up
   const [oppAsk,setOppAsk]=useState(null);const [viewG,setViewG]=useState(null);const [editG,setEditG]=useState(null);
   const [oppOrderIdx,setOppOrderIdx]=useState(0);// pointer into the opponent's batting order (carries across innings this game)
   const [roster,setRoster]=useState(()=>{
@@ -2026,7 +2043,7 @@ function App(){
   const [showPbP,setShowPbP]=useState(true);
   const [endConfirm,setEndConfirm]=useState(false);
   const [addLate,setAddLate]=useState(false);const [lateP,setLateP]=useState("");
-  const [awardDate,setAwardDate]=useState(null);
+  const [awardDate,setAwardDate]=useState(null);const [awardGame,setAwardGame]=useState(null);
   const [showShare,setShowShare]=useState(false);
   const [copied,setCopied]=useState(false);
   const [sheetLink,setSheetLink]=useState(()=>ldT("sheet_link",""));
@@ -2116,7 +2133,7 @@ function App(){
     // Batter credited the hit but thrown out on the bases: don't place them on base.
     if(isHR){nb.first=null;nb.second=null;nb.third=null}
     else if(batterOut){/* batter is out — not placed on any base */}
-    else if(["1B","BB","FC"].includes(outcome)){if(!nb.first)nb.first=batter;else if(!nb.second)nb.second=batter;else if(!nb.third)nb.third=batter}
+    else if(["1B","BB"].includes(outcome)){if(!nb.first)nb.first=batter;else if(!nb.second)nb.second=batter;else if(!nb.third)nb.third=batter}
     else if(outcome==="2B"){if(!nb.second)nb.second=batter;else if(!nb.third)nb.third=batter}
     else if(outcome==="3B"){nb.third=batter}
     else if(OUTS.includes(outcome)||outcome==="SF"){if(!adv||Object.keys(adv).length===0){nb.first=bases.first;nb.second=bases.second;nb.third=bases.third}}
@@ -2124,6 +2141,11 @@ function App(){
     if(adv){Object.entries(adv).forEach(([name,dest])=>{if(dest==="out"){if(nb.first===name)nb.first=null;if(nb.second===name)nb.second=null;if(nb.third===name)nb.third=null}})}
     // Clear FC out player from bases
     if(fcInfo&&fcInfo.player){if(nb.first===fcInfo.player)nb.first=null;if(nb.second===fcInfo.player)nb.second=null;if(nb.third===fcInfo.player)nb.third=null}
+    // FC: place the batter — 2nd/3rd when they reached extra on the error (after the out runner clears a base)
+    if(outcome==="FC"&&!batterOut){const bb=(fcInfo&&fcInfo.batterBase)||"1st";
+      if(bb==="3rd"){if(!nb.third)nb.third=batter;else if(!nb.second)nb.second=batter;else if(!nb.first)nb.first=batter}
+      else if(bb==="2nd"){if(!nb.second)nb.second=batter;else if(!nb.third)nb.third=batter;else if(!nb.first)nb.first=batter}
+      else{if(!nb.first)nb.first=batter;else if(!nb.second)nb.second=batter;else if(!nb.third)nb.third=batter}}
     const tr=(scored||[]).length;if(tr>0)setOurS(p=>({...p,[inn]:(p[inn]||0)+tr}));
     const addOuts=(extraOuts||0)+(batterOut?1:0); // runner outs + (batter out on the bases)
     const play={batter,outcome,rbi,runs:batScored,scoredPlayers:scored||[],inning:inn,outs,fcInfo,extraOuts:addOuts,batterOut:!!batterOut,loc:loc||null,hitType:hitType||""};
@@ -2161,10 +2183,11 @@ function App(){
   const saveG=(awardEligible=true,doUpload=false)=>{const rec={...gd,plays,ourScoreByInning:ourS,oppScoreByInning:oppS,oppBattedBalls:oppBalls,fieldErrors:fieldErrs,synced:false,awardEligible:awardEligible,id:Date.now()};
     const updated=[...games,rec];setGames(updated);
     if(doUpload)uploadGame(rec); // only uploads when chosen at save time
-    // Show the daily MVP only when there are 2+ award-eligible games today
+    // Playoff games get an MVP after every game; regular games after the 2nd of the day
     const today=gd.date||new Date().toISOString().slice(0,10);
     const eligibleToday=updated.filter(g=>g.date===today&&g.plays&&g.awardEligible!==false).length;
-    if(awardEligible!==false&&eligibleToday>=2){setAwardDate(today);setScr("awards")}else{setScr("setup")}
+    const isPO=!!gd.isPlayoff;
+    if(awardEligible!==false&&(isPO||eligibleToday>=2)){setAwardGame(isPO?rec:null);setAwardDate(today);setScr("awards")}else{setScr("setup")}
     setPlays([]);setInn(1);setOuts(0);setBatIdx(0);setHist([]);clearActive();setOppBalls([]);setFieldErrs([]);
     setBases({first:null,second:null,third:null});setLastO(null);setGd(null);setOurS({});setOppS({});setWaitOpp(false)};
 
@@ -2175,10 +2198,10 @@ function App(){
   const goTab=t=>setScr(t==="game"?"setup":t==="lineup"?"history":"stats");
   if(scr==="stats")return<React.Fragment><StatsPage games={games} onBack={()=>setScr("setup")}/><BottomNav active="stats" go={goTab}/></React.Fragment>;
   if(scr==="history")return<React.Fragment><HistoryPage games={games} onBack={()=>setScr("setup")} onView={g=>{setViewG(g);setScr("detail")}} onDelete={id=>setGames(p=>p.filter(g=>(g.id||0)!==id))} locked={locked}/><BottomNav active="lineup" go={goTab}/></React.Fragment>;
-  if(scr==="detail"&&viewG)return<GameDetail game={viewG} onBack={()=>setScr("history")} locked={locked} onEdit={()=>{setEditG(viewG);setScr("editgame")}}/>;
+  if(scr==="detail"&&viewG)return<GameDetail game={viewG} onBack={()=>setScr("history")} locked={locked} onEdit={()=>{setEditG(viewG);setScr("editgame")}} onTogglePlayoff={()=>{setGames(p=>p.map(g=>((g.id||0)===(viewG.id||0)?{...g,isPlayoff:!g.isPlayoff}:g)));setViewG(v=>({...v,isPlayoff:!v.isPlayoff}))}}/>;
   if(scr==="editgame"&&editG)return<GameEditor game={editG} roster={roster} onCancel={()=>setScr("detail")} onSave={ug=>{setGames(ps=>ps.map(g=>(g.id||0)===(ug.id||0)?ug:g));setViewG(ug);setEditG(null);setScr("detail")}}/>;
   if(scr==="sync")return<SyncPage games={games} onBack={()=>setScr("setup")} onSynced={ids=>setGames(p=>p.map(g=>ids.includes(g.id)?{...g,synced:true}:g))} sheetLink={sheetLink} setSheetLink={setSheetLink}/>;
-  if(scr==="awards"&&awardDate)return<DailyAwards games={games} date={awardDate} onDone={()=>{setAwardDate(null);setScr("setup")}}/>;
+  if(scr==="awards"&&awardDate)return<DailyAwards games={games} date={awardDate} solo={awardGame} onDone={()=>{setAwardDate(null);setAwardGame(null);setScr("setup")}}/>;
   if(scr==="summary")return<Summary gd={gd} plays={plays} ourS={ourS} oppS={oppS} onSave={saveG} canUpload={!!ldT("sync_url","")}/>;
 
   if(scr==="scoring"&&gd){
@@ -2224,6 +2247,15 @@ function App(){
             <div style={{fontSize:8,letterSpacing:1,color:"#8b98ac",fontWeight:800}}>IN THE HOLE</div>
             <div style={{fontSize:13,fontWeight:800,color:"#5e6e82",fontFamily:FM}}>{inHole}</div></div>}
         </div>}</div>
+      <button onClick={()=>setOppAsk(inn)} style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:7,padding:"10px 0",borderRadius:12,border:"1px solid #cfe0d4",background:"#eef5ea",color:"#15502f",fontWeight:700,fontSize:13,cursor:"pointer",marginTop:10}}>🧤 Track {gd.opponent||"opponent"}'s at-bats</button>
+      {(()=>{const sp=[].concat(batterSpray(games,curBat),plays.filter(p=>p.batter===curBat&&p.loc).map(p=>({x:p.loc.x,y:p.loc.y,type:p.hitType||"",hit:true})));
+        return(<div style={{background:"#fff",borderRadius:14,padding:"11px 13px",marginTop:8,border:"1px solid #e4dec9"}}>
+          <div onClick={()=>setShowBatSpray(v=>!v)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer"}}>
+            <span style={{fontSize:13,fontWeight:800,color:"#14532d"}}>{curBat}'s spray <span style={{color:"#8a9079",fontWeight:600,fontSize:11.5}}>· {sp.length} hit{sp.length!==1?"s":""} this season</span></span>
+            <span style={{color:"#8a9079",fontSize:13}}>{showBatSpray?"▾":"▸"}</span></div>
+          {showBatSpray&&(sp.length?<div style={{maxWidth:240,margin:"10px auto 0"}}><SprayChart balls={sp} lines/></div>:
+            <div style={{fontSize:11,color:"#9ea593",textAlign:"center",padding:"12px 0 4px"}}>No hits logged yet — tap “Where'd it go?” when you record one.</div>)}
+        </div>);})()}
 
       {picking&&<div style={{background:"#fff",borderRadius:12,border:"1px solid #e4dec9",padding:8,marginBottom:8,boxShadow:"0 4px 16px rgba(0,0,0,.1)"}}>
         {gd.lineup.map(n=><button key={n} onClick={()=>{const idx=gd.lineup.indexOf(n);if(idx>=0)setBatIdx(idx+Math.floor(batIdx/gd.lineup.length)*gd.lineup.length);setPicking(false)}}
@@ -2268,7 +2300,8 @@ function App(){
       {hist.length>0&&<div style={{textAlign:"center",marginTop:12}}>
         <button onClick={undo} style={{padding:"6px 16px",borderRadius:8,border:"1px solid #F44336",background:"transparent",color:"#F44336",fontSize:11,fontWeight:700,cursor:"pointer"}}>UNDO LAST</button></div>}
 
-      {modal&&<OutModal batter={modal.batter} outcome={modal.outcome} bases={bases} onOk={doPlay} onNo={()=>setModal(null)}/>}
+      {modal&&<OutModal batter={modal.batter} outcome={modal.outcome} bases={bases} onOk={doPlay} onNo={()=>setModal(null)}
+        batterTrail={[].concat(batterSpray(games,modal.batter),plays.filter(p=>p.batter===modal.batter&&p.loc).map(p=>({x:p.loc.x,y:p.loc.y,type:p.hitType||""})))}/>}
       {oppAsk!==null&&<OppModal inning={oppAsk} onOk={doOpp} lineup={gd.lineup} opponent={gd.opponent} formation={gd.formation} positions={gd.positions} priorOppBalls={oppBalls} games={games} orderIdx={oppOrderIdx} setOrderIdx={setOppOrderIdx}/>}
 
       {skipConf&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
